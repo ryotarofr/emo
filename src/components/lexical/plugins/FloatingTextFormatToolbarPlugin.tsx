@@ -159,6 +159,7 @@ function IconSuperscript() {
 	);
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Lexical selection type not exported
 function getSelectedNode(selection: any) {
 	const anchor = selection.anchor;
 	const focus = selection.focus;
@@ -277,7 +278,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold");
 				}}
-				class={"popup-item " + (props.isBold ? "active" : "")}
+				class={`popup-item ${props.isBold ? "active" : ""}`}
 				title="Bold"
 				aria-label="Format bold"
 			>
@@ -288,7 +289,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic");
 				}}
-				class={"popup-item " + (props.isItalic ? "active" : "")}
+				class={`popup-item ${props.isItalic ? "active" : ""}`}
 				title="Italic"
 				aria-label="Format italic"
 			>
@@ -299,7 +300,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline");
 				}}
-				class={"popup-item " + (props.isUnderline ? "active" : "")}
+				class={`popup-item ${props.isUnderline ? "active" : ""}`}
 				title="Underline"
 				aria-label="Format underline"
 			>
@@ -310,7 +311,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough");
 				}}
-				class={"popup-item " + (props.isStrikethrough ? "active" : "")}
+				class={`popup-item ${props.isStrikethrough ? "active" : ""}`}
 				title="Strikethrough"
 				aria-label="Format strikethrough"
 			>
@@ -321,7 +322,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "subscript");
 				}}
-				class={"popup-item " + (props.isSubscript ? "active" : "")}
+				class={`popup-item ${props.isSubscript ? "active" : ""}`}
 				title="Subscript"
 				aria-label="Format subscript"
 			>
@@ -332,7 +333,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "superscript");
 				}}
-				class={"popup-item " + (props.isSuperscript ? "active" : "")}
+				class={`popup-item ${props.isSuperscript ? "active" : ""}`}
 				title="Superscript"
 				aria-label="Format superscript"
 			>
@@ -343,7 +344,7 @@ function TextFormatFloatingToolbar(props: {
 				onClick={() => {
 					props.editor.dispatchCommand(FORMAT_TEXT_COMMAND, "code");
 				}}
-				class={"popup-item " + (props.isCode ? "active" : "")}
+				class={`popup-item ${props.isCode ? "active" : ""}`}
 				title="Code"
 				aria-label="Format code"
 			>
@@ -352,7 +353,7 @@ function TextFormatFloatingToolbar(props: {
 			<button
 				type="button"
 				onClick={insertLink}
-				class={"popup-item " + (props.isLink ? "active" : "")}
+				class={`popup-item ${props.isLink ? "active" : ""}`}
 				title="Link"
 				aria-label="Insert link"
 			>
@@ -492,6 +493,7 @@ function useFloatingTextFormatToolbar(
 	);
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Lexical node type not exported
 function $isCodeNode(node: any): boolean {
 	return node?.getType?.() === "code";
 }

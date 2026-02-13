@@ -1,13 +1,13 @@
+import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html";
 import { AutoLinkNode, LinkNode } from "@lexical/link";
-import {
-	$getRoot,
-	$getSelection,
-	type EditorState,
-	type Klass,
-	type LexicalEditor,
-	type LexicalNode,
-	type LexicalNodeReplacement,
+import type {
+	EditorState,
+	Klass,
+	LexicalEditor,
+	LexicalNode,
+	LexicalNodeReplacement,
 } from "lexical";
+import { $getRoot, $insertNodes } from "lexical";
 import "./RichTextEditor.css";
 import { CodeHighlightNode, CodeNode } from "@lexical/code";
 import { ListItemNode, ListNode } from "@lexical/list";
@@ -62,24 +62,13 @@ import RichTextTheme from "./RichTextTheme";
 //import { EmojiNode } from "./nodes/EmojiNode";
 //import EmoticonPlugin from "./plugins/EmoticonPlugin";
 
-function Placeholder() {
-	return <div class="editor-placeholder">Enter some plain text...</div>;
+interface RichTextEditorProps {
+	initialHtml?: string;
+	onHtmlChange?: (html: string) => void;
 }
 
-// When the editor changes, you can get notified via the
-// LexicalOnChangePlugin!
-function onChange(
-	editorState: EditorState,
-	_tags: Set<string>,
-	_editor: LexicalEditor,
-) {
-	editorState.read(() => {
-		// Read the contents of the EditorState here.
-		const root = $getRoot();
-		const selection = $getSelection();
-
-		console.log(root, selection);
-	});
+function Placeholder() {
+	return <div class="editor-placeholder">Enter some plain text...</div>;
 }
 
 const editorConfig = {
@@ -87,7 +76,7 @@ const editorConfig = {
 	theme: RichTextTheme,
 	namespace: "",
 	// Handling of errors during update
-	onError(error: any) {
+	onError(error: Error) {
 		throw error;
 	},
 	// Any custom nodes go here
@@ -118,9 +107,34 @@ const editorConfig = {
 	] as ReadonlyArray<Klass<LexicalNode> | LexicalNodeReplacement>,
 };
 
-export default function Editor() {
+export default function Editor(props: RichTextEditorProps) {
+	const handleChange = (
+		_editorState: EditorState,
+		_tags: Set<string>,
+		editor: LexicalEditor,
+	) => {
+		editor.read(() => {
+			const html = $generateHtmlFromNodes(editor);
+			props.onHtmlChange?.(html);
+		});
+	};
+
+	const config = {
+		...editorConfig,
+		editorState: props.initialHtml
+			? (editor: LexicalEditor) => {
+					const html = props.initialHtml as string;
+					const parser = new DOMParser();
+					const dom = parser.parseFromString(html, "text/html");
+					const nodes = $generateNodesFromDOM(editor, dom);
+					$getRoot().clear();
+					$insertNodes(nodes);
+				}
+			: undefined,
+	};
+
 	return (
-		<LexicalComposer initialConfig={editorConfig}>
+		<LexicalComposer initialConfig={config}>
 			<div class="editor-container">
 				<ToolbarPlugin />
 				<div class="editor-inner">
@@ -138,7 +152,7 @@ export default function Editor() {
 					<TableActionMenuPlugin />
 					<LexicalMarkdownShortcutPlugin transformers={TRANSFORMERS} />
 					<AutoFocusPlugin />
-					<OnChangePlugin onChange={onChange} />
+					<OnChangePlugin onChange={handleChange} />
 					<HistoryPlugin />
 					<TreeViewPlugin />
 					<CodeHighlightPlugin />

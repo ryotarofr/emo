@@ -6,62 +6,64 @@ import { HistoryPlugin } from "@ryotarofr/lexical-solid/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@ryotarofr/lexical-solid/LexicalOnChangePlugin";
 import { PlainTextPlugin } from "@ryotarofr/lexical-solid/LexicalPlainTextPlugin";
 import {
+	$createParagraphNode,
+	$createTextNode,
 	$getRoot,
-	$getSelection,
 	type EditorState,
 	type LexicalEditor,
 } from "lexical";
-import TreeViewPlugin from "../plugins/TreeViewPlugin";
 import ExampleTheme from "../themes/PlainTextTheme";
 
-//import { EmojiNode } from "./nodes/EmojiNode";
-//import EmoticonPlugin from "./plugins/EmoticonPlugin";
-
-function Placeholder() {
-	return <div class="editor-placeholder">Enter some plain text...</div>;
+interface PlainTextEditorProps {
+	onTextChange?: (text: string) => void;
+	initialText?: string;
+	placeholder?: string;
 }
 
-// When the editor changes, you can get notified via the
-// LexicalOnChangePlugin!
-function onChange(
-	editorState: EditorState,
-	_tags: Set<string>,
-	_editor: LexicalEditor,
-) {
-	editorState.read(() => {
-		// Read the contents of the EditorState here.
-		const root = $getRoot();
-		const selection = $getSelection();
-
-		console.log(root, selection);
-	});
+function Placeholder(props: { text: string }) {
+	return <div class="editor-placeholder">{props.text}</div>;
 }
 
-const editorConfig = {
-	// The editor theme
-	theme: ExampleTheme,
-	namespace: "",
-	// Handling of errors during update
-	onError(error: any) {
-		throw error;
-	},
-	// Any custom nodes go here
-	//nodes: [EmojiNode]
-};
+export default function Editor(props: PlainTextEditorProps) {
+	const editorConfig = {
+		theme: ExampleTheme,
+		namespace: "plain-text-editor",
+		onError(error: unknown) {
+			throw error;
+		},
+		editorState: props.initialText
+			? (_editor: LexicalEditor) => {
+					const root = $getRoot();
+					const paragraph = $createParagraphNode();
+					paragraph.append($createTextNode(props.initialText ?? ""));
+					root.append(paragraph);
+				}
+			: undefined,
+	};
 
-export default function Editor() {
+	const handleChange = (
+		editorState: EditorState,
+		_tags: Set<string>,
+		_editor: LexicalEditor,
+	) => {
+		editorState.read(() => {
+			const text = $getRoot().getTextContent();
+			props.onTextChange?.(text);
+		});
+	};
+
 	return (
 		<LexicalComposer initialConfig={editorConfig}>
 			<div class="editor-container">
 				<PlainTextPlugin
 					contentEditable={<ContentEditable class="editor-input" />}
-					placeholder={<Placeholder />}
+					placeholder={
+						<Placeholder text={props.placeholder ?? "テキストを入力..."} />
+					}
 					errorBoundary={LexicalErrorBoundary}
 				/>
-				<OnChangePlugin onChange={onChange} />
+				<OnChangePlugin onChange={handleChange} />
 				<HistoryPlugin />
-				<TreeViewPlugin />
-				{/*<EmoticonPlugin />*/}
 				<AutoFocusPlugin />
 			</div>
 		</LexicalComposer>

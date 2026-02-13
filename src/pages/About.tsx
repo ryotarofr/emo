@@ -1,6 +1,6 @@
 function About() {
 	return (
-		<div>
+		<div style={{ padding: "1.5rem" }}>
 			<h1>About</h1>
 			<p>This is a Tauri + SolidJS application with routing.</p>
 			<ul>

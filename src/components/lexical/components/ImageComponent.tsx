@@ -152,7 +152,7 @@ export default function ImageComponent(props: ImageComponentProps) {
 				/>
 				<Show when={isFocused}>
 					<ImageResizer
-						imageRef={imageRef!}
+						imageRef={imageRef as HTMLImageElement}
 						maxWidth={props.maxWidth}
 						onResizeStart={onResizeStart}
 						onResizeEnd={onResizeEnd}

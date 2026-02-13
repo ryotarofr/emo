@@ -712,10 +712,7 @@ function TableCellActionMenuContainer(props: { anchorElem: HTMLElement }) {
 		}
 
 		const rootElement = editor.getRootElement();
-		if (
-			rootElement !== null &&
-			rootElement.contains(nativeSelection.anchorNode)
-		) {
+		if (rootElement?.contains(nativeSelection.anchorNode)) {
 			let tableCellNodeFromSelection: TableCellNode | null = null;
 
 			if ($isRangeSelection(selection)) {
@@ -798,7 +795,7 @@ function TableCellActionMenuContainer(props: { anchorElem: HTMLElement }) {
 					ref={menuButtonRef}
 					class="table-cell-action-button"
 					style={{
-						transform: `translate(${menuPosition()!.x}px, ${menuPosition()!.y}px)`,
+						transform: `translate(${menuPosition()?.x}px, ${menuPosition()?.y}px)`,
 					}}
 					onClick={() => setShowMenu(!showMenu())}
 					title="Table options"
@@ -809,11 +806,11 @@ function TableCellActionMenuContainer(props: { anchorElem: HTMLElement }) {
 					<div
 						class="table-action-menu-container"
 						style={{
-							transform: `translate(${menuPosition()!.x - 180}px, ${menuPosition()!.y + 28}px)`,
+							transform: `translate(${(menuPosition()?.x ?? 0) - 180}px, ${(menuPosition()?.y ?? 0) + 28}px)`,
 						}}
 					>
 						<TableActionMenu
-							tableCellNode={tableCellNode()!}
+							tableCellNode={tableCellNode() as TableCellNode}
 							onClose={() => setShowMenu(false)}
 						/>
 					</div>
@@ -848,7 +845,7 @@ export default function TableActionMenuPlugin(props: {
 
 	return (
 		<Show when={isEditable() && anchorElem()}>
-			<TableCellActionMenuContainer anchorElem={anchorElem()!} />
+			<TableCellActionMenuContainer anchorElem={anchorElem() as HTMLElement} />
 		</Show>
 	);
 }

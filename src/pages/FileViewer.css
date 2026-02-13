@@ -1,0 +1,85 @@
+.fileviewer-container {
+	display: flex;
+	flex-direction: column;
+	min-height: 100%;
+}
+
+.fileviewer-header {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	padding: 1rem 1.5rem;
+	border-bottom: 1px solid var(--demo-border);
+	background: var(--demo-bg-surface);
+}
+
+.fileviewer-header h1 {
+	font-size: 1.25rem;
+	font-weight: 600;
+	color: var(--demo-neutral-fg);
+	margin: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.fileviewer-path {
+	font-size: 0.75rem;
+	color: var(--demo-neutral-fg-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.fileviewer-content {
+	flex: 1;
+	overflow: auto;
+	padding: 1.5rem;
+	background: var(--demo-bg-subtle);
+	backdrop-filter: blur(var(--demo-blur-strength));
+}
+
+.fileviewer-image-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 200px;
+}
+
+.fileviewer-image {
+	max-width: 100%;
+	max-height: calc(100vh - 200px);
+	border-radius: 0.5rem;
+	box-shadow: var(--demo-shadow-md);
+	object-fit: contain;
+}
+
+.fileviewer-text {
+	background: var(--demo-bg-surface);
+	border: 1px solid var(--demo-border);
+	border-radius: 0.5rem;
+	padding: 1rem 1.25rem;
+	font-family: "Consolas", "Monaco", "Courier New", monospace;
+	font-size: 0.8125rem;
+	line-height: 1.6;
+	color: var(--demo-neutral-fg);
+	white-space: pre-wrap;
+	word-break: break-all;
+	overflow-x: auto;
+	margin: 0;
+	tab-size: 4;
+}
+
+.fileviewer-loading,
+.fileviewer-error {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 200px;
+	font-size: 0.875rem;
+	color: var(--demo-neutral-fg-muted);
+}
+
+.fileviewer-error {
+	color: var(--demo-error, #c62828);
+}

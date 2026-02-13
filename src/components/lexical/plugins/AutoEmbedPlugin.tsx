@@ -22,7 +22,7 @@ const YoutubeEmbedConfig: EmbedConfig<{ id: string }> = {
 
 		for (const pattern of patterns) {
 			const match = url.match(pattern);
-			if (match && match[1]) {
+			if (match?.[1]) {
 				return {
 					id: match[1],
 					url,
@@ -48,7 +48,7 @@ const TwitterEmbedConfig: EmbedConfig<{ id: string }> = {
 	type: "tweet",
 	parseUrl: (url: string) => {
 		const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
-		if (match && match[1]) {
+		if (match?.[1]) {
 			return {
 				id: match[1],
 				url,

@@ -46,7 +46,7 @@ function extractYouTubeVideoId(url: string): string | null {
 
 	for (const pattern of patterns) {
 		const match = url.match(pattern);
-		if (match && match[1]) {
+		if (match?.[1]) {
 			return match[1];
 		}
 	}
@@ -65,7 +65,7 @@ function extractTweetId(url: string): string | null {
 
 	for (const pattern of patterns) {
 		const match = url.match(pattern);
-		if (match && match[1]) {
+		if (match?.[1]) {
 			return match[1];
 		}
 	}
@@ -81,7 +81,7 @@ function extractTweetId(url: string): string | null {
 // Helper function to extract Figma document ID from URL
 function extractFigmaDocumentId(url: string): string | null {
 	const match = url.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/);
-	if (match && match[1]) {
+	if (match?.[1]) {
 		return match[1];
 	}
 	return null;

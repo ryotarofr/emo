@@ -1,6 +1,5 @@
 body {
 	margin: 0;
-	background: #eee;
 	font-family:
 		system-ui, -apple-system, BlinkMacSystemFont, ".SFNSText-Regular",
 		sans-serif;
@@ -59,7 +58,7 @@ h1 {
 }
 
 .editor-inner {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	position: relative;
 }
 
@@ -392,11 +391,11 @@ h1 {
 }
 
 .editor-table td {
-	background-color: #fff;
+	background-color: var(--demo-bg-surface, #fff);
 }
 
 .editor-table-cell-selected {
-	background-color: #c9dbf0 !important;
+	background-color: #c9dbf0;
 }
 
 .editor-table-cell-header {
@@ -432,7 +431,7 @@ h1 {
 /* Floating Text Format Toolbar */
 .floating-text-format-popup {
 	display: flex;
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	padding: 4px;
 	vertical-align: middle;
 	position: absolute;
@@ -478,7 +477,7 @@ h1 {
 
 /* Component Picker Menu (Slash Commands) */
 .component-picker-menu {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	box-shadow: 0 5px 10px rgba(0, 0, 0, 0.3);
 	border-radius: 8px;
 	max-height: 250px;
@@ -608,7 +607,7 @@ pre::-webkit-scrollbar-thumb {
 	align-items: center;
 	gap: 2px;
 	margin-bottom: 1px;
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	padding: 4px;
 	border-top-left-radius: 10px;
 	border-top-right-radius: 10px;
@@ -787,7 +786,7 @@ i.chevron-down {
 	border-radius: 8px;
 	min-width: 100px;
 	min-height: 40px;
-	background-color: #fff;
+	background-color: var(--demo-bg-surface, #fff);
 }
 
 .dropdown .item {
@@ -802,7 +801,7 @@ i.chevron-down {
 	flex-direction: row;
 	flex-shrink: 0;
 	justify-content: space-between;
-	background-color: #fff;
+	background-color: var(--demo-bg-surface, #fff);
 	border-radius: 8px;
 	border: 0;
 	min-width: 268px;
@@ -860,7 +859,7 @@ i.chevron-down {
 	max-width: 300px;
 	width: 100%;
 	opacity: 0;
-	background-color: #fff;
+	background-color: var(--demo-bg-surface, #fff);
 	box-shadow: 0px 5px 10px rgba(0, 0, 0, 0.3);
 	border-radius: 8px;
 	transition: opacity 0.5s;
@@ -1018,7 +1017,7 @@ i.justify-align {
 
 /* Emoji Picker Menu */
 .emoji-picker-menu {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
 	border-radius: 8px;
 	padding: 4px;
@@ -1055,7 +1054,7 @@ i.justify-align {
 
 /* Mentions Menu */
 .mentions-menu {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
 	border-radius: 8px;
 	padding: 4px;
@@ -1139,7 +1138,7 @@ i.justify-align {
 
 /* Auto Embed Menu */
 .auto-embed-menu {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
 	border-radius: 8px;
 	padding: 4px;
@@ -1345,7 +1344,7 @@ i.justify-align {
 	left: 0;
 	width: 20px;
 	height: 20px;
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	border: 1px solid #ddd;
 	border-radius: 4px;
 	cursor: pointer;
@@ -1379,7 +1378,7 @@ i.justify-align {
 }
 
 .table-action-menu {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	border-radius: 8px;
 	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 	min-width: 200px;
@@ -1497,7 +1496,7 @@ i.justify-align {
 }
 
 .color-picker-item.clear {
-	background: #fff;
+	background: var(--demo-bg-surface, #fff);
 	display: flex;
 	align-items: center;
 	justify-content: center;

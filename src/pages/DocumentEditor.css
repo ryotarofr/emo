@@ -1,0 +1,204 @@
+.doceditor-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+.doceditor-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.75rem 1.5rem;
+	border-bottom: 1px solid var(--demo-border);
+	background: var(--demo-bg-surface);
+	flex-shrink: 0;
+}
+
+.doceditor-title {
+	font-size: 1.125rem;
+	font-weight: 600;
+	color: var(--demo-neutral-fg);
+	margin: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+
+.doceditor-header-right {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	flex-shrink: 0;
+}
+
+.doceditor-save-indicator {
+	font-size: 0.75rem;
+	color: var(--demo-neutral-fg-muted);
+	white-space: nowrap;
+	opacity: 0.7;
+}
+
+.doceditor-mode-toggle {
+	display: flex;
+	gap: 0.25rem;
+	background: var(--demo-neutral-subtle);
+	border-radius: 0.5rem;
+	padding: 0.1875rem;
+	flex-shrink: 0;
+}
+
+.doceditor-mode-button {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	padding: 0.375rem 0.75rem;
+	background: transparent;
+	border: none;
+	border-radius: 0.375rem;
+	font-size: 0.8125rem;
+	color: var(--demo-neutral-fg-muted);
+	cursor: pointer;
+	transition:
+		background-color 150ms ease,
+		color 150ms ease;
+}
+
+.doceditor-mode-button:hover {
+	color: var(--demo-neutral-fg);
+}
+
+.doceditor-mode-button svg {
+	width: 0.875rem;
+	height: 0.875rem;
+}
+
+.doceditor-mode-active {
+	background: var(--demo-bg-surface);
+	color: var(--demo-coral-fg);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.doceditor-mode-active:hover {
+	color: var(--demo-coral-fg);
+}
+
+.doceditor-body {
+	flex: 1;
+	overflow: auto;
+}
+
+.doceditor-hidden {
+	display: none;
+}
+
+.doceditor-editor {
+	height: 100%;
+}
+
+.doceditor-preview {
+	padding: 2rem;
+	max-width: 48rem;
+	margin: 0 auto;
+}
+
+.doceditor-preview-empty {
+	text-align: center;
+	color: var(--demo-neutral-fg-muted);
+	font-size: 0.875rem;
+	padding: 3rem 0;
+}
+
+.doceditor-preview-content {
+	font-size: 0.9375rem;
+	line-height: 1.7;
+	color: var(--demo-neutral-fg);
+}
+
+.doceditor-preview-content h1 {
+	font-size: 1.75rem;
+	font-weight: 700;
+	margin: 1.5rem 0 0.75rem;
+}
+
+.doceditor-preview-content h2 {
+	font-size: 1.375rem;
+	font-weight: 600;
+	margin: 1.25rem 0 0.625rem;
+}
+
+.doceditor-preview-content h3 {
+	font-size: 1.125rem;
+	font-weight: 600;
+	margin: 1rem 0 0.5rem;
+}
+
+.doceditor-preview-content p {
+	margin: 0.625rem 0;
+}
+
+.doceditor-preview-content ul,
+.doceditor-preview-content ol {
+	padding-left: 1.5rem;
+	margin: 0.5rem 0;
+}
+
+.doceditor-preview-content blockquote {
+	border-left: 3px solid var(--demo-border);
+	margin: 0.75rem 0;
+	padding: 0.25rem 0 0.25rem 1rem;
+	color: var(--demo-neutral-fg-muted);
+}
+
+.doceditor-preview-content code {
+	background: var(--demo-neutral-subtle);
+	border-radius: 0.25rem;
+	padding: 0.125rem 0.375rem;
+	font-size: 0.85em;
+	font-family: "Consolas", "Monaco", "Courier New", monospace;
+}
+
+.doceditor-preview-content pre {
+	background: var(--demo-neutral-subtle);
+	border: 1px solid var(--demo-border);
+	border-radius: 0.5rem;
+	padding: 1rem;
+	overflow-x: auto;
+	margin: 0.75rem 0;
+}
+
+.doceditor-preview-content pre code {
+	background: none;
+	padding: 0;
+}
+
+.doceditor-preview-content img {
+	max-width: 100%;
+	border-radius: 0.5rem;
+}
+
+.doceditor-preview-content table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0.75rem 0;
+}
+
+.doceditor-preview-content th,
+.doceditor-preview-content td {
+	border: 1px solid var(--demo-border);
+	padding: 0.5rem 0.75rem;
+	text-align: left;
+}
+
+.doceditor-preview-content th {
+	background: var(--demo-neutral-subtle);
+	font-weight: 600;
+}
+
+.doceditor-preview-content hr {
+	border: none;
+	border-top: 1px solid var(--demo-border);
+	margin: 1.5rem 0;
+}

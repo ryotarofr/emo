@@ -164,6 +164,7 @@ function onDragover(event: DragEvent): boolean {
 	return true;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Lexical editor type used loosely in drag handler
 function onDrop(event: DragEvent, editor: any): boolean {
 	const node = getDragImageData(event);
 	if (!node) {

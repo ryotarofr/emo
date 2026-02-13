@@ -107,7 +107,7 @@ export default function MentionsPlugin(): JSX.Element {
 		closeMenu: () => void,
 	) => {
 		editor.update(() => {
-			const mentionNode = $createMentionNode("@" + selectedOption.name);
+			const mentionNode = $createMentionNode(`@${selectedOption.name}`);
 			if (nodeToRemove) {
 				nodeToRemove.replace(mentionNode);
 			}

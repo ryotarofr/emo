@@ -172,9 +172,25 @@ function TweetComponent(props: {
 	onMount(async () => {
 		await loadTwitterScript();
 
-		if ((window as any).twttr?.widgets) {
-			(window as any).twttr.widgets
-				.createTweet(props.tweetID, containerRef!, { theme: "light" })
+		const twttr = (
+			window as unknown as Record<
+				string,
+				{
+					widgets?: {
+						createTweet: (
+							id: string,
+							el: HTMLElement,
+							opts: Record<string, string>,
+						) => Promise<void>;
+					};
+				}
+			>
+		).twttr;
+		if (twttr?.widgets) {
+			twttr.widgets
+				.createTweet(props.tweetID, containerRef as HTMLDivElement, {
+					theme: "light",
+				})
 				.then(() => {
 					setIsLoading(false);
 				});
