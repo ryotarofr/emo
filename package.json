@@ -11,13 +11,18 @@
 		"tauri": "tauri",
 		"format": "biome format --write .",
 		"lint": "biome lint .",
-		"check": "biome check --write ."
+		"check": "biome check --write .",
+		"db:up": "docker compose up -d --wait",
+		"db:down": "docker compose down",
+		"db:reset": "docker compose down -v && docker compose up -d --wait"
 	},
 	"license": "MIT",
 	"dependencies": {
 		"@ark-ui/solid": "^5.30.0",
 		"@ryotarofr/lexical-solid": "^0.39.0",
-		"@tauri-apps/api": "^2",
+		"@tauri-apps/api": "^2.10.1",
+		"@tauri-apps/plugin-dialog": "^2.6.0",
+		"@tauri-apps/plugin-fs": "^2.4.5",
 		"@tauri-apps/plugin-opener": "^2",
 		"@thisbeyond/solid-dnd": "^0.7.5",
 		"gridstack": "^12.4.2",
