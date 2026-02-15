@@ -70,6 +70,20 @@ export const COLOR_PRESETS = [
 
 export const DRAFTS_STORAGE_KEY = "panel-drafts";
 
+/** プロバイダー名ごとのモデル一覧 (llm_providers.name → モデルID[]) */
+export const PROVIDER_MODELS: Record<string, { id: string; label: string }[]> =
+	{
+		anthropic: [
+			{ id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5" },
+			{ id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+		],
+		google: [
+			{ id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+			{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+			{ id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+		],
+	};
+
 /** ウィジェットタイプの日本語ラベル（共通定数） */
 export const TYPE_LABELS: Record<WidgetType, string> = {
 	text: "テキスト Widget",
@@ -148,10 +162,12 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiPrompt:
 					"以下のフォルダ内容を日本語で要約してください。重要なファイルとその目的、プロジェクト構造を説明してください。",
 				aiMaxTokens: 4096,
+				aiModel: "gemini-2.5-flash",
+				aiProviderName: "google",
 				needsAgent: true,
 			},
 		],
-		edges: [{ sourceIndex: 0, targetIndex: 1 }],
+		edges: [{ sourceIndex: 0, targetIndex: 1, summarize: true }],
 	},
 	{
 		id: "er-diagram",
@@ -178,7 +194,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiSystemPrompt:
 					"あなたはデータモデリングの専門家です。ソースコードを分析してER図をMermaid形式で出力します。",
 				aiMaxTokens: 4096,
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "visual",
@@ -191,7 +209,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 			},
 		],
 		edges: [
-			{ sourceIndex: 0, targetIndex: 1 },
+			{ sourceIndex: 0, targetIndex: 1, summarize: true },
 			{ sourceIndex: 1, targetIndex: 2 },
 		],
 	},
@@ -222,7 +240,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはソフトウェアアーキテクトです。コードベースを分析し、設計上の強み・弱みを的確に評価します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["web_fetch", "web_search"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -237,7 +257,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["file_write", "shell_exec"],
 				aiOrchestrationMode: "approval",
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -251,11 +273,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはQAエンジニアです。コードの品質を厳密に検証し、問題を報告します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["self_eval", "shell_exec"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 		],
 		edges: [
-			{ sourceIndex: 0, targetIndex: 1 },
+			{ sourceIndex: 0, targetIndex: 1, summarize: true },
 			{ sourceIndex: 1, targetIndex: 2 },
 			{ sourceIndex: 2, targetIndex: 3 },
 		],
@@ -287,7 +311,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはデバッグの専門家です。バグ報告から根本原因を迅速に特定し、修正方針を立案します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["web_search"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -302,7 +328,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["file_write"],
 				aiOrchestrationMode: "approval",
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -316,7 +344,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはQAエンジニアです。修正コードの正確性とリグレッション有無を厳密に検証します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["self_eval", "shell_exec"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 		],
 		edges: [
@@ -358,7 +388,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはテクニカルライターです。ソースコードから正確なAPI情報を抽出し、構造化して整理します。",
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["web_search"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -373,11 +405,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["file_write"],
 				aiOrchestrationMode: "approval",
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 		],
 		edges: [
-			{ sourceIndex: 0, targetIndex: 1 },
+			{ sourceIndex: 0, targetIndex: 1, summarize: true },
 			{ sourceIndex: 1, targetIndex: 2 },
 		],
 	},
@@ -407,7 +441,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはセキュリティとコード品質の専門家です。静的解析ツールの結果を正確に解釈し、重要度順に報告します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["shell_exec", "self_eval"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -421,7 +457,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはシニアソフトウェアエンジニアです。コードレビューを通じて品質向上のための具体的なフィードバックを提供します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["web_search"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -436,11 +474,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["file_write", "git_ops"],
 				aiOrchestrationMode: "approval",
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 		],
 		edges: [
-			{ sourceIndex: 0, targetIndex: 1 },
+			{ sourceIndex: 0, targetIndex: 1, summarize: true },
 			{ sourceIndex: 1, targetIndex: 2 },
 			{ sourceIndex: 2, targetIndex: 3 },
 		],
@@ -458,6 +498,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				color: "#795548",
 				w: 14,
 				h: 14,
+				folderMaxDepth: 10,
 				needsFolderPath: true,
 			},
 			{
@@ -472,7 +513,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはAI業界のマーケットリサーチャーです。Web検索を活用して最新の市場動向を調査し、客観的なデータに基づいた分析レポートを作成します。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["web_search", "web_fetch"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -486,7 +529,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはプロダクトマネージャー兼ソフトウェアアーキテクトです。市場データと技術的実態の両面から、最も効果的な機能投資の優先順位を判断します。具体的かつ実行可能な提案を行ってください。",
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["web_search"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -501,7 +546,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 				aiMaxTokens: 8192,
 				aiEnabledTools: ["file_write", "shell_exec"],
 				aiOrchestrationMode: "approval",
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 			{
 				type: "ai",
@@ -515,11 +562,13 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplateDef[] = [
 					"あなたはCI/CDエンジニア兼QAエンジニアです。コードの品質ゲートを厳密に管理し、基準を満たすコードのみをコミットします。",
 				aiMaxTokens: 4096,
 				aiEnabledTools: ["self_eval", "shell_exec", "git_ops"],
-				needsAgent: true,
+				aiModel: "gemini-2.5-flash",
+			aiProviderName: "google",
+			needsAgent: true,
 			},
 		],
 		edges: [
-			{ sourceIndex: 0, targetIndex: 2 },
+			{ sourceIndex: 0, targetIndex: 2, summarize: true },
 			{ sourceIndex: 1, targetIndex: 2 },
 			{ sourceIndex: 2, targetIndex: 3 },
 			{ sourceIndex: 3, targetIndex: 4 },

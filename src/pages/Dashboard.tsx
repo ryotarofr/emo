@@ -68,6 +68,7 @@ import {
 import {
 	AVAILABLE_TOOLS,
 	COLOR_PRESETS,
+	PROVIDER_MODELS,
 	VISUAL_SUBTYPES,
 	WIDGET_DEFS,
 	WORKFLOW_TEMPLATES,
@@ -124,6 +125,7 @@ import {
 	loadTemplates,
 	saveTemplate,
 } from "./dashboard/templateManager";
+import { clearAllSummaryCaches } from "./dashboard/summaryCache";
 
 // GridStackはデフォルトでtextContent（XSS対策）を使用する。
 // ウィジェットHTML（チャート、テーブル、リッチテキスト等）を正しく描画するためinnerHTMLに上書きする。
@@ -446,7 +448,7 @@ export default function Dashboard() {
 			},
 		};
 
-		executePipeline(edges, gridRef, callbacks, pipelineAbortController.signal);
+		executePipeline(edges, gridRef, callbacks, pipelineAbortController.signal, params.id);
 	};
 
 	const handlePipelineStop = () => {
@@ -479,6 +481,14 @@ export default function Dashboard() {
 		setPipelineEdges(updated);
 		savePipelineEdges(params.id, updated);
 		refreshConnections();
+	};
+
+	const toggleEdgeSummarize = (edgeId: string) => {
+		const updated = pipelineEdges().map((e) =>
+			e.id === edgeId ? { ...e, summarize: !e.summarize } : e,
+		);
+		setPipelineEdges(updated);
+		savePipelineEdges(params.id, updated);
 	};
 
 	const getAllWidgetIds = (): number[] => {
@@ -541,17 +551,28 @@ export default function Dashboard() {
 				if (panelDef.needsFolderPath) cfg.folderPath = folderPath;
 				if (panelDef.aiPrompt) cfg.aiPrompt = panelDef.aiPrompt;
 				if (panelDef.aiSystemPrompt) cfg.aiSystemPrompt = panelDef.aiSystemPrompt;
+				if (panelDef.aiModel) cfg.aiModel = panelDef.aiModel;
+				if (panelDef.aiTemperature !== undefined) cfg.aiTemperature = panelDef.aiTemperature;
 				if (panelDef.aiMaxTokens) cfg.aiMaxTokens = panelDef.aiMaxTokens;
 				if (panelDef.aiEnabledTools) cfg.aiEnabledTools = panelDef.aiEnabledTools;
 				if (panelDef.aiOrchestrationMode) cfg.aiOrchestrationMode = panelDef.aiOrchestrationMode;
 				if (panelDef.textBody !== undefined) cfg.textBody = panelDef.textBody;
+				if (panelDef.folderMaxDepth !== undefined) cfg.folderMaxDepth = panelDef.folderMaxDepth;
 
 				// AIパネル用にエージェント自動作成
 				if (panelDef.needsAgent) {
+					// テンプレートで指定されたプロバイダー名からIDを解決
+					const providerName = panelDef.aiProviderName;
+					const matchedProvider = providerName
+						? providers.find((p) => p.name === providerName)
+						: undefined;
+					const providerId = matchedProvider?.id ?? providers[0].id;
+					cfg.aiProviderId = providerId;
+
 					const workflow = await createWorkflow(userId, panelDef.title);
 					const agent = await createAgent({
 						workflow_id: workflow.id,
-						llm_provider_id: providers[0].id,
+						llm_provider_id: providerId,
 						name: panelDef.title,
 						system_prompt: panelDef.aiSystemPrompt || undefined,
 						model: cfg.aiModel,
@@ -601,9 +622,11 @@ export default function Dashboard() {
 			const folderWidgetId = createdWidgetIds[
 				tmpl.panels.findIndex((p) => p.needsFolderPath)
 			];
+			const folderPanelDef = tmpl.panels.find((p) => p.needsFolderPath);
+			const templateMaxDepth = folderPanelDef?.folderMaxDepth ?? 3;
 			const excludePatterns = DEFAULT_EXCLUDE_PATTERNS;
 			const entries = await readDirRecursive(folderPath, {
-				maxDepth: 3,
+				maxDepth: templateMaxDepth,
 				excludePatterns,
 				maxFiles: 500,
 			});
@@ -664,9 +687,34 @@ export default function Dashboard() {
 						.querySelector(`[data-widget-id="${aiWidgetId}"]`)
 						?.getAttribute("data-ai-agent-id") ?? "";
 
-				const execution = await executeAgent(agentId, augmentedPrompt);
+				// 429レート制限リトライ付きで実行
+				const MAX_RETRIES = 5;
+				let execution: Awaited<ReturnType<typeof executeAgent>> | null = null;
+				for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+					try {
+						execution = await executeAgent(agentId, augmentedPrompt);
+						break;
+					} catch (err) {
+						const errStr = String(err);
+						if (errStr.includes("429") && attempt < MAX_RETRIES) {
+							const waitSec = Math.min(15 * (attempt + 1), 90);
+							if (badge) {
+								badge.className = "ai-status-badge ai-status-running";
+								badge.textContent = `レート制限... ${waitSec}秒待機`;
+							}
+							setTemplateProgress({ message: `レート制限のため${waitSec}秒待機中...` });
+							await new Promise((r) => setTimeout(r, waitSec * 1000));
+							if (badge) {
+								badge.className = "ai-status-badge ai-status-running";
+								badge.textContent = "リトライ中...";
+							}
+							continue;
+						}
+						throw err;
+					}
+				}
 
-				if (execution.status === "completed") {
+				if (execution && execution.status === "completed") {
 					const output = execution.output_text ?? "";
 					setPanelOutput(aiWidgetId, output);
 
@@ -700,7 +748,7 @@ export default function Dashboard() {
 						renderDiagramsInGrid(gridRef);
 					}
 				} else {
-					const errMsg = execution.error_message ?? "実行失敗";
+					const errMsg = execution?.error_message ?? "実行失敗";
 					if (badge) {
 						badge.className = "ai-status-badge ai-status-failed";
 						badge.textContent = "失敗";
@@ -831,6 +879,20 @@ export default function Dashboard() {
 			diagramCode = root?.getAttribute("data-diagram-code") ?? "";
 		}
 
+		// AI設定フィールド (DOM属性から復元)
+		let aiSystemPrompt = "";
+		let aiModel = "claude-sonnet-4-5-20250929";
+		let aiTemperature = 0.7;
+		let aiMaxTokens = 1024;
+		let aiProviderId = "";
+		if (type === "ai") {
+			aiSystemPrompt = root?.getAttribute("data-ai-system-prompt") ?? "";
+			aiModel = root?.getAttribute("data-ai-model") || "claude-sonnet-4-5-20250929";
+			aiTemperature = Number(root?.getAttribute("data-ai-temperature") ?? "0.7") || 0.7;
+			aiMaxTokens = Number(root?.getAttribute("data-ai-max-tokens") ?? "1024") || 1024;
+			aiProviderId = root?.getAttribute("data-ai-provider-id") ?? "";
+		}
+
 		setPanelConfig({
 			type,
 			visualSubType,
@@ -842,11 +904,11 @@ export default function Dashboard() {
 			aiPrompt,
 			aiLinkedPanels,
 			aiAgentId,
-			aiSystemPrompt: "",
-			aiModel: "claude-sonnet-4-5-20250929",
-			aiTemperature: 0.7,
-			aiMaxTokens: 1024,
-			aiProviderId: "",
+			aiSystemPrompt,
+			aiModel,
+			aiTemperature,
+			aiMaxTokens,
+			aiProviderId,
 			aiOrchestrationMode,
 			aiEnabledTools,
 			folderPath,
@@ -1515,6 +1577,18 @@ export default function Dashboard() {
 							Step: #{currentPipelineStep()}
 						</span>
 					</Show>
+					<button
+						type="button"
+						class="pipeline-btn pipeline-btn-cache-clear"
+						disabled={pipelineStatus() === "running"}
+						onClick={() => {
+							clearAllSummaryCaches(params.id);
+							toastManager.addToast({ id: `cache-clear-${Date.now()}`, type: "info", title: "要約キャッシュクリア", message: "全パネルの要約キャッシュをクリアしました" });
+						}}
+					>
+						<Trash2Icon size={14} />
+						キャッシュクリア
+					</button>
 					<span class="pipeline-edge-count">
 						{pipelineEdges().length} エッジ
 					</span>
@@ -1853,10 +1927,14 @@ export default function Dashboard() {
 																});
 															}}
 															on:change={(e) => {
-																updateConfig(
-																	"aiProviderId",
-																	(e.target as HTMLSelectElement).value,
-																);
+																const newProvId = (e.target as HTMLSelectElement).value;
+																updateConfig("aiProviderId", newProvId);
+																// プロバイダー変更時にモデルを自動選択
+																const prov = llmProviders().find((p) => p.id === newProvId);
+																const models = PROVIDER_MODELS[prov?.name ?? ""] ?? [];
+																if (models.length > 0) {
+																	updateConfig("aiModel", models[0].id);
+																}
 															}}
 														>
 															<option value="">選択してください</option>
@@ -1873,15 +1951,32 @@ export default function Dashboard() {
 												<div class="fp-ai-field">
 													<label class="fp-ai-field-label">
 														モデル名
-														<input
-															type="text"
-															class="fp-field-input"
+														<select
+															class="fp-ai-select"
 															value={panelConfig().aiModel}
-															onInput={(e) =>
-																updateConfig("aiModel", e.currentTarget.value)
+															on:change={(e) =>
+																updateConfig(
+																	"aiModel",
+																	(e.target as HTMLSelectElement).value,
+																)
 															}
-															placeholder="claude-sonnet-4-5-20250929"
-														/>
+														>
+															{(() => {
+																const provId = panelConfig().aiProviderId;
+																const prov = llmProviders().find((p) => p.id === provId);
+																const models = PROVIDER_MODELS[prov?.name ?? ""] ?? [];
+																if (models.length === 0) {
+																	return <option value={panelConfig().aiModel}>{panelConfig().aiModel || "モデル未設定"}</option>;
+																}
+																return (
+																	<For each={models}>
+																		{(m) => (
+																			<option value={m.id}>{m.label}</option>
+																		)}
+																	</For>
+																);
+															})()}
+														</select>
 													</label>
 												</div>
 												<div class="fp-ai-field">
@@ -2508,6 +2603,16 @@ export default function Dashboard() {
 								}}
 							>
 								{edge()?.autoChain ? "Auto-chain 無効化" : "Auto-chain 有効化"}
+							</button>
+							<button
+								type="button"
+								class="edge-context-menu-item"
+								onClick={() => {
+									toggleEdgeSummarize(menu().edgeId);
+									setEdgeContextMenu(null);
+								}}
+							>
+								{edge()?.summarize ? "要約パイプライン 無効化" : "要約パイプライン 有効化"}
 							</button>
 							<div class="edge-context-separator" />
 							<div class="edge-context-field">

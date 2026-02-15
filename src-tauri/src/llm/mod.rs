@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod gemini;
 pub mod types;
 
 use std::collections::HashMap;

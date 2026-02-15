@@ -39,7 +39,9 @@
       "Bash(python:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(bun -e:*)",
-      "WebFetch(domain:eden.so)"
+      "WebFetch(domain:eden.so)",
+      "Bash(ls:*)",
+      "WebFetch(domain:ai.google.dev)"
     ]
   }
 }

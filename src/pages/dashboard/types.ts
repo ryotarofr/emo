@@ -68,6 +68,8 @@ export interface PipelineEdge {
 	condition?: string; // 通過条件（source出力に対するキーワード条件）
 	maxRetries?: number; // ターゲットのリトライ回数上限
 	retryDelayMs?: number; // リトライ間隔(ms)
+	summarize?: boolean; // Map-Reduce要約を有効化
+	summarizeAgentId?: string; // 要約用エージェント (未設定時はtargetのagentを使用)
 }
 
 /** ワークフローテンプレートのパネル定義 */
@@ -80,11 +82,15 @@ export interface WorkflowTemplatePanelDef {
 	h: number;
 	aiPrompt?: string;
 	aiSystemPrompt?: string;
+	aiModel?: string;
+	aiProviderName?: string;
+	aiTemperature?: number;
 	aiMaxTokens?: number;
 	aiEnabledTools?: string[];
 	aiOrchestrationMode?: string;
 	diagramCode?: string;
 	textBody?: string;
+	folderMaxDepth?: number;
 	needsFolderPath?: boolean;
 	needsAgent?: boolean;
 }
@@ -96,6 +102,7 @@ export interface WorkflowTemplateEdgeDef {
 	condition?: string;
 	maxRetries?: number;
 	retryDelayMs?: number;
+	summarize?: boolean;
 }
 
 /** ワークフローテンプレート定義 */

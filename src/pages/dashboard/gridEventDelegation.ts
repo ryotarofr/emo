@@ -78,7 +78,16 @@ export function setupGridEventDelegation(
 				return;
 			}
 
-			// 0e. フォルダ読み込みボタン
+			// 0e. コピーボタン
+			const copyBtn = target.closest(
+				"[data-action='ai-copy']",
+			) as HTMLElement | null;
+			if (copyBtn) {
+				handleAiCopy(copyBtn, gridRef, e);
+				return;
+			}
+
+			// 0f. フォルダ読み込みボタン
 			const folderBtn = target.closest(
 				"[data-action='folder-load']",
 			) as HTMLElement | null;
@@ -240,6 +249,32 @@ function handleAiExecute(
 		}
 	}
 	e.stopPropagation();
+}
+
+function handleAiCopy(
+	copyBtn: HTMLElement,
+	gridRef: HTMLDivElement,
+	e: MouseEvent,
+) {
+	const wid = Number(copyBtn.getAttribute("data-widget-id"));
+	if (Number.isNaN(wid) || wid <= 0) return;
+	e.stopPropagation();
+
+	const outEl = gridRef.querySelector(`[data-output-id="${wid}"]`);
+	const text = outEl?.textContent ?? "";
+	if (!text) return;
+
+	navigator.clipboard.writeText(text).then(() => {
+		const svg = copyBtn.querySelector("svg");
+		if (svg) {
+			const original = svg.innerHTML;
+			svg.innerHTML =
+				'<polyline points="20 6 9 17 4 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+			setTimeout(() => {
+				svg.innerHTML = original;
+			}, 1500);
+		}
+	});
 }
 
 function handleOrchestrate(

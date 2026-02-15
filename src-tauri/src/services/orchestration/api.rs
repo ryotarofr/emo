@@ -18,7 +18,7 @@ use super::tool_loop::{run_tool_loop, run_tool_loop_approval};
 use super::tools::process_tool_calls;
 
 /// 許容される入力テキストの最大長（100KB）
-const MAX_INPUT_LENGTH: usize = 100_000;
+const MAX_INPUT_LENGTH: usize = 200_000;
 
 /// エージェントのsystem_promptからオーケストレーターのシステムプロンプトを構築
 fn build_orchestrator_system(agent_system_prompt: Option<&str>) -> String {

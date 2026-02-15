@@ -75,6 +75,15 @@ pub fn run() {
                     eprintln!("[tebiki] Anthropic provider not available: {e}");
                 }
             }
+            match llm::gemini::GeminiProvider::from_env() {
+                Ok(provider) => {
+                    println!("[tebiki] Google AI Studio provider registered.");
+                    registry.register(Box::new(provider));
+                }
+                Err(e) => {
+                    eprintln!("[tebiki] Google AI Studio provider not available: {e}");
+                }
+            }
             let registry = Arc::new(registry);
             app.manage(registry.clone());
 

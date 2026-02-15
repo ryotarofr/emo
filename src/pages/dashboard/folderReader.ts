@@ -17,8 +17,8 @@ export interface FolderReadOptions {
 
 /** ファイル単体の読み込みサイズ上限（50KB） */
 const MAX_FILE_SIZE = 50 * 1024;
-/** 全ファイル合計の出力サイズ上限（80KB）— API入力上限(100KB)を超えないよう余裕を持たせる */
-const MAX_TOTAL_CONTENT_SIZE = 80 * 1024;
+/** 全ファイル合計の出力サイズ上限（150KB）— buildAugmentedPromptで180KB以内に切り詰められるため余裕あり */
+const MAX_TOTAL_CONTENT_SIZE = 150 * 1024;
 
 export const DEFAULT_EXCLUDE_PATTERNS = [
 	"node_modules",

@@ -11,8 +11,8 @@ use crate::llm::types::{LlmMessage, LlmRequest, MessageContent};
 use crate::llm::LlmRegistry;
 use crate::models::{AgentExecution, AgentMessage, ExecuteAgentRequest};
 
-/// Maximum allowed input text length (100KB)
-const MAX_INPUT_LENGTH: usize = 100_000;
+/// Maximum allowed input text length (200KB — LLM APIのトークン上限は別途あるため余裕をもたせる)
+const MAX_INPUT_LENGTH: usize = 200_000;
 
 pub async fn execute_agent(
     db: &DbPool,

@@ -72,12 +72,18 @@ export function makeAiContent(
 	agentId: string,
 	orchestrationMode = "none",
 	enabledTools: string[] = [],
+	aiModel = "claude-sonnet-4-5-20250929",
+	aiProviderId = "",
+	aiSystemPrompt = "",
+	aiTemperature = 0.7,
+	aiMaxTokens = 1024,
 ): string {
 	const t = escapeHtml(title);
 	const p = escapeHtml(aiPrompt);
 	const linked = aiLinkedPanels.join(",");
 	const aid = escapeHtml(agentId);
 	const toolsAttr = enabledTools.join(",");
+	const sp = escapeHtml(aiSystemPrompt);
 	const promptPreview = aiPrompt
 		? `<div class="ai-prompt-preview">${escapeHtml(aiPrompt.length > 80 ? `${aiPrompt.slice(0, 80)}...` : aiPrompt)}</div>`
 		: "";
@@ -91,7 +97,7 @@ export function makeAiContent(
 		orchestrationMode !== "none"
 			? `<button class="ai-orchestrate-btn" data-action="ai-orchestrate" data-widget-id="${id}" type="button">オーケストレート</button>`
 			: ""
-	}<span class="ai-status-badge" data-status-id="${id}"></span></div><div class="ai-output-area" data-output-id="${id}"></div>`;
+	}<span class="ai-status-badge" data-status-id="${id}"></span></div><div class="ai-output-wrapper"><div class="ai-output-area" data-output-id="${id}"></div><button class="ai-copy-btn" data-action="ai-copy" data-widget-id="${id}" type="button" title="コピー"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>`;
 	const planArea =
 		orchestrationMode === "approval"
 			? `<div class="ai-plan-area" data-plan-id="${id}" style="display:none"><div class="ai-plan-content"></div><div class="ai-plan-actions"><button class="ai-approve-btn" data-action="ai-approve" data-widget-id="${id}" type="button">承認</button><button class="ai-reject-btn" data-action="ai-reject" data-widget-id="${id}" type="button">却下</button></div></div>`
@@ -100,7 +106,7 @@ export function makeAiContent(
 		orchestrationMode !== "none"
 			? `<div class="ai-sub-agents-area" data-sub-agents-id="${id}"></div>`
 			: "";
-	return `<div class="widget-ai" data-widget-id="${id}" data-widget-type="ai" data-ai-prompt="${p}" data-ai-linked="${linked}" data-ai-agent-id="${aid}" data-ai-orchestration-mode="${orchestrationMode}" data-ai-enabled-tools="${toolsAttr}">${portsHtml(id)}<div class="widget-header" style="background:${color}20;color:${color}"><span>${t}</span><div class="widget-header-actions"><span>#${id}</span>${menuHtml(id)}</div></div><div class="widget-body"><div class="ai-widget-content">${promptPreview}${linkedLabel}${toolsLabel}${execArea}${planArea}${subAgentsArea}</div></div></div>`;
+	return `<div class="widget-ai" data-widget-id="${id}" data-widget-type="ai" data-ai-prompt="${p}" data-ai-linked="${linked}" data-ai-agent-id="${aid}" data-ai-orchestration-mode="${orchestrationMode}" data-ai-enabled-tools="${toolsAttr}" data-ai-model="${escapeHtml(aiModel)}" data-ai-provider-id="${escapeHtml(aiProviderId)}" data-ai-system-prompt="${sp}" data-ai-temperature="${aiTemperature}" data-ai-max-tokens="${aiMaxTokens}">${portsHtml(id)}<div class="widget-header" style="background:${color}20;color:${color}"><span>${t}</span><div class="widget-header-actions"><span>#${id}</span>${menuHtml(id)}</div></div><div class="widget-body"><div class="ai-widget-content">${promptPreview}${linkedLabel}${toolsLabel}${execArea}${planArea}${subAgentsArea}</div></div></div>`;
 }
 
 export function makeObjectContent(
@@ -171,6 +177,11 @@ export function makeWidgetContent(
 				cfg?.aiAgentId ?? "",
 				cfg?.aiOrchestrationMode ?? "none",
 				cfg?.aiEnabledTools ?? [],
+				cfg?.aiModel ?? "claude-sonnet-4-5-20250929",
+				cfg?.aiProviderId ?? "",
+				cfg?.aiSystemPrompt ?? "",
+				cfg?.aiTemperature ?? 0.7,
+				cfg?.aiMaxTokens ?? 1024,
 			);
 		case "object":
 			return makeObjectContent(id, title, color);

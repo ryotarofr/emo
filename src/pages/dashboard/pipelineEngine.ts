@@ -1,6 +1,8 @@
 import { executeAgent, orchestrateAgent } from "../../utils/agent";
 import { TYPE_LABELS } from "./constants";
 import { getWidgetType, setOutputText, updateStatusBadge } from "./domHelpers";
+import { summarizeFolderOutput } from "./mapReduceSummarizer";
+import { parseFolderOutput } from "./summaryCache";
 import type { PipelineEdge, WidgetType } from "./types";
 
 /**
@@ -178,8 +180,8 @@ export function collectUpstreamOutputs(
 	return result;
 }
 
-/** API入力の最大バイト数 */
-const MAX_INPUT_BYTES = 95_000;
+/** API入力の最大バイト数（バックエンド上限200KBに対し、システムプロンプト等のオーバーヘッド分を考慮） */
+const MAX_INPUT_BYTES = 180_000;
 
 /** 元プロンプトにupstream出力を注入（API入力上限を超えないよう切り詰め） */
 export function buildAugmentedPrompt(
@@ -289,6 +291,7 @@ export async function executePipeline(
 	gridRef: HTMLDivElement,
 	callbacks: PipelineCallbacks,
 	signal: AbortSignal,
+	dashboardId = "",
 ): Promise<void> {
 	// グリッド上の全ウィジェットIDを収集
 	const widgetIds: number[] = [];
@@ -372,7 +375,19 @@ export async function executePipeline(
 				label: TYPE_LABELS[getWidgetType(gridRef, u.widgetId) as WidgetType] ?? "Widget",
 			}),
 		);
-		const augmentedPrompt = buildAugmentedPrompt(prompt, upstream);
+
+		// Map-Reduce要約: summarize=true のエッジに対応するupstreamを要約で置換
+		const processedUpstream = await applySummarization(
+			upstream,
+			widgetId,
+			edges,
+			gridRef,
+			signal,
+			dashboardId,
+			agentId,
+		);
+
+		const augmentedPrompt = buildAugmentedPrompt(prompt, processedUpstream);
 
 		// リトライ設定を収集
 		const maxRetries = Math.max(
@@ -386,6 +401,8 @@ export async function executePipeline(
 
 		let lastError = "";
 		let succeeded = false;
+		let rateLimitRetries = 0;
+		const MAX_RATE_LIMIT_RETRIES = 5;
 
 		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			if (signal.aborted) {
@@ -420,7 +437,17 @@ export async function executePipeline(
 				succeeded = true;
 				break;
 			} catch (err) {
-				lastError = String(err);
+				const errStr = String(err);
+				// 429レート制限: エッジのリトライ回数を消費せずにバックオフ待機して再試行
+				if (errStr.includes("429") && rateLimitRetries < MAX_RATE_LIMIT_RETRIES) {
+					rateLimitRetries++;
+					const waitSec = Math.min(15 * rateLimitRetries, 90);
+					updateStatusBadge(gridRef, widgetId, "running", `レート制限... ${waitSec}秒待機`);
+					await new Promise((r) => setTimeout(r, waitSec * 1000));
+					attempt--; // エッジのリトライ回数を消費しない
+					continue;
+				}
+				lastError = errStr;
 			}
 		}
 
@@ -434,4 +461,98 @@ export async function executePipeline(
 	}
 
 	callbacks.onPipelineComplete();
+}
+
+/**
+ * summarize=true のエッジに対応する upstream 出力を Map-Reduce 要約で置換する。
+ * summarize が設定されていないエッジの出力はそのまま通過する。
+ */
+async function applySummarization(
+	upstream: { widgetId: number; output: string; label?: string }[],
+	targetWidgetId: number,
+	edges: PipelineEdge[],
+	gridRef: HTMLDivElement,
+	signal: AbortSignal,
+	dashboardId: string,
+	fallbackAgentId: string,
+): Promise<{ widgetId: number; output: string; label?: string }[]> {
+	if (!dashboardId) return upstream;
+
+	// summarize=true のエッジのソースIDを収集
+	const summarizeEdges = edges.filter(
+		(e) => e.targetWidgetId === targetWidgetId && e.summarize,
+	);
+	if (summarizeEdges.length === 0) return upstream;
+
+	const summarizeSourceIds = new Set(
+		summarizeEdges.map((e) => e.sourceWidgetId),
+	);
+
+	const result: { widgetId: number; output: string; label?: string }[] = [];
+
+	for (const u of upstream) {
+		if (!summarizeSourceIds.has(u.widgetId)) {
+			result.push(u);
+			continue;
+		}
+
+		// 要約用エージェントIDを決定
+		const edge = summarizeEdges.find(
+			(e) => e.sourceWidgetId === u.widgetId,
+		);
+		const agentId = edge?.summarizeAgentId || fallbackAgentId;
+		if (!agentId) {
+			console.warn(
+				`[pipeline] No agent for summarization of panel #${u.widgetId}, passing raw output`,
+			);
+			result.push(u);
+			continue;
+		}
+
+		// フォルダ出力をパースしてファイル一覧を取得
+		const files = parseFolderOutput(u.output);
+		if (files.length === 0) {
+			// パース失敗またはファイルなし → そのまま通過
+			result.push(u);
+			continue;
+		}
+
+		// フォルダパスを出力のヘッダから取得
+		const folderPathMatch = u.output.match(/^=== フォルダ: (.+?) ===/);
+		const folderPath = folderPathMatch?.[1] ?? "";
+
+		try {
+			console.log(
+				`[pipeline] Starting map-reduce for panel #${u.widgetId} (${files.length} files)`,
+			);
+			const mapReduceResult = await summarizeFolderOutput({
+				agentId,
+				dashboardId,
+				sourceWidgetId: u.widgetId,
+				folderPath,
+				signal,
+				gridRef,
+				files,
+			});
+
+			console.log(
+				`[pipeline] Map-reduce complete: ${mapReduceResult.stats.cachedFiles} cached, ${mapReduceResult.stats.summarizedFiles} summarized, ${mapReduceResult.stats.mapCallCount} map calls, ${mapReduceResult.stats.reduceCallCount} reduce calls`,
+			);
+
+			result.push({
+				widgetId: u.widgetId,
+				output: mapReduceResult.summary,
+				label: u.label ? `${u.label} (要約)` : "要約",
+			});
+		} catch (err) {
+			console.error(
+				`[pipeline] Map-reduce failed for panel #${u.widgetId}:`,
+				err,
+			);
+			// 失敗時はraw出力にフォールバック
+			result.push(u);
+		}
+	}
+
+	return result;
 }
