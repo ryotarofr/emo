@@ -17,6 +17,7 @@ use crate::services::{
     agent_service, auth_service, execution_service, orchestration, user_service,
     workflow_service,
 };
+use crate::tools::ToolRegistry;
 
 // --- DB commands ---
 
@@ -183,6 +184,7 @@ pub async fn orchestrate_agent(
     db: State<'_, DbPool>,
     registry: State<'_, Arc<LlmRegistry>>,
     event_bus: State<'_, EventBus>,
+    tool_registry: State<'_, Arc<ToolRegistry>>,
     agent_id: Uuid,
     input: String,
     mode: String,
@@ -192,7 +194,7 @@ pub async fn orchestrate_agent(
         input,
         mode,
     };
-    orchestration::orchestrate_agent(&db, &registry, &event_bus, &request).await
+    orchestration::orchestrate_agent(&db, &registry, &event_bus, &tool_registry, &request).await
 }
 
 #[tauri::command]
@@ -208,9 +210,10 @@ pub async fn approve_orchestration(
     db: State<'_, DbPool>,
     registry: State<'_, Arc<LlmRegistry>>,
     event_bus: State<'_, EventBus>,
+    tool_registry: State<'_, Arc<ToolRegistry>>,
     id: Uuid,
 ) -> Result<OrchestrationRun, AppError> {
-    orchestration::approve_orchestration(&db, &registry, &event_bus, id).await
+    orchestration::approve_orchestration(&db, &registry, &event_bus, &tool_registry, id).await
 }
 
 #[tauri::command]
@@ -220,4 +223,55 @@ pub async fn reject_orchestration(
     id: Uuid,
 ) -> Result<OrchestrationRun, AppError> {
     orchestration::reject_orchestration(&db, &event_bus, id).await
+}
+
+// --- Tool commands ---
+
+#[tauri::command]
+pub async fn list_tools(
+    tool_registry: State<'_, Arc<ToolRegistry>>,
+) -> Result<Vec<crate::llm::types::ToolDefinition>, AppError> {
+    let names = tool_registry.tool_names();
+    Ok(tool_registry.definitions_for(&names))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn update_tool_permissions(
+    db: State<'_, DbPool>,
+    agent_id: Uuid,
+    tools: Vec<crate::models::ToolPermissionEntry>,
+) -> Result<serde_json::Value, AppError> {
+    let pool = db.get()?;
+    for entry in &tools {
+        sqlx::query(
+            r#"
+            INSERT INTO agent_tool_permissions (agent_id, tool_name, is_enabled, config)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (agent_id, tool_name) DO UPDATE
+            SET is_enabled = EXCLUDED.is_enabled, config = EXCLUDED.config, updated_at = NOW()
+            "#,
+        )
+        .bind(agent_id)
+        .bind(&entry.tool_name)
+        .bind(entry.is_enabled)
+        .bind(&entry.config)
+        .execute(&pool)
+        .await?;
+    }
+    Ok(serde_json::json!({ "status": "ok" }))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn get_tool_permissions(
+    db: State<'_, DbPool>,
+    agent_id: Uuid,
+) -> Result<Vec<crate::models::AgentToolPermission>, AppError> {
+    let pool = db.get()?;
+    let permissions = sqlx::query_as::<_, crate::models::AgentToolPermission>(
+        "SELECT * FROM agent_tool_permissions WHERE agent_id = $1 ORDER BY tool_name",
+    )
+    .bind(agent_id)
+    .fetch_all(&pool)
+    .await?;
+    Ok(permissions)
 }

@@ -34,6 +34,14 @@ pub enum AppError {
     #[error("WebSocket error: {0}")]
     #[allow(dead_code)]
     WebSocketError(String),
+
+    #[error("Tool execution failed: {0}")]
+    #[allow(dead_code)]
+    ToolExecutionFailed(String),
+
+    #[error("Tool permission denied: {0}")]
+    #[allow(dead_code)]
+    ToolPermissionDenied(String),
 }
 
 // For Tauri command responses
@@ -60,6 +68,8 @@ impl AppError {
             AppError::Internal(_) => "internal_error",
             AppError::LlmError(_) => "llm_error",
             AppError::WebSocketError(_) => "websocket_error",
+            AppError::ToolExecutionFailed(_) => "tool_execution_failed",
+            AppError::ToolPermissionDenied(_) => "tool_permission_denied",
         }
     }
 }
@@ -78,6 +88,8 @@ impl IntoResponse for AppError {
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::LlmError(_) => StatusCode::BAD_GATEWAY,
             AppError::WebSocketError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::ToolExecutionFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::ToolPermissionDenied(_) => StatusCode::FORBIDDEN,
         };
 
         let body = serde_json::json!({

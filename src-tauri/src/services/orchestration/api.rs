@@ -10,6 +10,7 @@ use crate::event_bus::{EventBus, ExecutionEvent};
 use crate::llm::types::{ContentBlock, LlmMessage, MessageContent};
 use crate::llm::LlmRegistry;
 use crate::models::{AgentExecution, OrchestrateRequest, OrchestrationRun};
+use crate::tools::ToolRegistry;
 
 use super::context::OrchestrationContext;
 use super::finalize::finalize_orchestration;
@@ -37,11 +38,38 @@ fn validate_mode(mode: &str) -> Result<(), AppError> {
     }
 }
 
+/// DBからエージェントの有効ツールリストを取得
+async fn load_enabled_tools(pool: &sqlx::PgPool, agent_id: Uuid) -> Vec<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT tool_name FROM agent_tool_permissions WHERE agent_id = $1 AND is_enabled = true",
+    )
+    .bind(agent_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
+/// プロジェクトルートを取得してToolContextを構築
+fn build_tool_context() -> crate::tools::types::ToolContext {
+    let working_dir = std::env::var("TEBIKI_PROJECT_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        });
+
+    crate::tools::types::ToolContext {
+        working_dir: working_dir.clone(),
+        allowed_write_dirs: vec![working_dir],
+        ..Default::default()
+    }
+}
+
 /// メインエントリーポイント: オーケストレーション実行を作成しツールループを開始
 pub async fn orchestrate_agent(
     db: &DbPool,
     registry: &Arc<LlmRegistry>,
     event_bus: &EventBus,
+    tool_registry: &Arc<ToolRegistry>,
     request: &OrchestrateRequest,
 ) -> Result<OrchestrationRun, AppError> {
     // Validate input before any DB work
@@ -73,6 +101,9 @@ pub async fn orchestrate_agent(
     .fetch_optional(&pool)
     .await?
     .ok_or(AppError::NotFound)?;
+
+    // エージェントの有効ツールを取得
+    let enabled_tools = load_enabled_tools(&pool, agent.id).await;
 
     // 2. トランザクション内でworkflow_run、agent_execution、orchestration_runを作成
     let mut tx = pool.begin().await.map_err(|e| AppError::Database(e))?;
@@ -152,6 +183,9 @@ pub async fn orchestrate_agent(
         system_prompt: Some(orchestrator_system),
         temperature: agent.temperature,
         max_tokens: agent.max_tokens,
+        tool_registry: tool_registry.clone(),
+        enabled_tools,
+        tool_context: build_tool_context(),
     };
 
     let mode = request.mode.clone();
@@ -189,6 +223,7 @@ pub async fn approve_orchestration(
     db: &DbPool,
     registry: &Arc<LlmRegistry>,
     event_bus: &EventBus,
+    tool_registry: &Arc<ToolRegistry>,
     orchestration_run_id: Uuid,
 ) -> Result<OrchestrationRun, AppError> {
     let pool = db.get()?;
@@ -250,6 +285,9 @@ pub async fn approve_orchestration(
     .fetch_one(&pool)
     .await?;
 
+    // エージェントの有効ツールを取得
+    let enabled_tools = load_enabled_tools(&pool, agent.id).await;
+
     let orchestrator_system = build_orchestrator_system(agent.system_prompt.as_deref());
 
     let ctx = OrchestrationContext {
@@ -266,6 +304,9 @@ pub async fn approve_orchestration(
         system_prompt: Some(orchestrator_system),
         temperature: agent.temperature,
         max_tokens: agent.max_tokens,
+        tool_registry: tool_registry.clone(),
+        enabled_tools,
+        tool_context: build_tool_context(),
     };
 
     // 再開: 最後のアシスタントメッセージからtool_useブロックを抽出し、実行後ループを継続

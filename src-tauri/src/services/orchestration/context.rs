@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::db::DbPool;
 use crate::event_bus::EventBus;
 use crate::llm::LlmRegistry;
+use crate::tools::ToolRegistry;
 
 /// オーケストレーション実行全体で共有する状態をまとめた構造体。
 /// パラメータ数を12個以上から2個（ctx + messages）に削減する。
@@ -22,4 +23,8 @@ pub(super) struct OrchestrationContext {
     pub system_prompt: Option<String>,
     pub temperature: f64,
     pub max_tokens: i32,
+    // Tool system fields
+    pub tool_registry: Arc<ToolRegistry>,
+    pub enabled_tools: Vec<String>,
+    pub tool_context: crate::tools::types::ToolContext,
 }

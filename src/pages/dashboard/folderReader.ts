@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { detectFileContentType } from "../../utils/fileTypes";
+import { escapeHtml } from "./widgetContent";
 
 export interface FolderEntry {
 	name: string;
@@ -251,10 +252,3 @@ export function buildFolderOutput(
 	return lines.join("\n");
 }
 
-function escapeHtml(str: string): string {
-	return str
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
-}

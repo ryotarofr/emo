@@ -7,8 +7,17 @@ use crate::services::execution_service;
 
 use super::context::OrchestrationContext;
 
-/// オーケストレーターLLM用のツール定義
-pub(super) fn orchestrator_tools() -> Vec<ToolDefinition> {
+/// エージェントに提供するツール定義を構築
+/// 既存の3ツール（sub_agent系）+ 有効化された外部ツールを結合
+pub(super) fn orchestrator_tools(ctx: &OrchestrationContext) -> Vec<ToolDefinition> {
+    let mut tools = builtin_orchestrator_tools();
+    let external_tools = ctx.tool_registry.definitions_for(&ctx.enabled_tools);
+    tools.extend(external_tools);
+    tools
+}
+
+/// 既存の3ツール（組み込みオーケストレーション用）
+fn builtin_orchestrator_tools() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: TOOL_CREATE_SUB_AGENT.to_string(),
@@ -175,7 +184,14 @@ pub(super) async fn handle_tool_call(
                 Err(e) => (format!("Failed to get result: {e}"), true),
             }
         }
-        _ => (format!("Unknown tool: {tool_name}"), true),
+        _ => {
+            // ToolRegistryに委譲
+            let result = ctx
+                .tool_registry
+                .execute(tool_name, tool_input, &ctx.tool_context)
+                .await;
+            (result.content, result.is_error)
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+import type { AgentToolConfig, AgentToolPermission, BackendToolDef } from "../pages/dashboard/types";
 import { apiCall } from "./api";
 
 // --- Type Definitions ---
@@ -158,6 +159,18 @@ export type ExecutionEvent =
 			orchestration_run_id: string;
 			orchestrator_agent_id: string;
 			error: string;
+	  }
+	| {
+			type: "ToolExecutionStarted";
+			execution_id: string;
+			tool_name: string;
+	  }
+	| {
+			type: "ToolExecutionCompleted";
+			execution_id: string;
+			tool_name: string;
+			duration_ms: number;
+			is_error: boolean;
 	  };
 
 // --- API Functions ---
@@ -292,5 +305,37 @@ export async function rejectOrchestration(
 		"POST",
 		`/api/orchestrate/${id}/reject`,
 		{ id },
+	);
+}
+
+// --- Tool API Functions ---
+
+export async function listTools(): Promise<BackendToolDef[]> {
+	return apiCall<BackendToolDef[]>(
+		"list_tools",
+		"GET",
+		"/api/tools",
+	);
+}
+
+export async function getToolPermissions(
+	agentId: string,
+): Promise<AgentToolPermission[]> {
+	return apiCall<AgentToolPermission[]>(
+		"get_tool_permissions",
+		"GET",
+		`/api/tools/permissions/${agentId}`,
+	);
+}
+
+export async function updateToolPermissions(
+	agentId: string,
+	tools: AgentToolConfig[],
+): Promise<{ status: string }> {
+	return apiCall<{ status: string }>(
+		"update_tool_permissions",
+		"POST",
+		"/api/tools/permissions",
+		{ agent_id: agentId, tools },
 	);
 }

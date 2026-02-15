@@ -1,5 +1,7 @@
 import { executeAgent, orchestrateAgent } from "../../utils/agent";
-import type { PipelineEdge } from "./types";
+import { TYPE_LABELS } from "./constants";
+import { getWidgetType, setOutputText, updateStatusBadge } from "./domHelpers";
+import type { PipelineEdge, WidgetType } from "./types";
 
 /**
  * Kahnのアルゴリズムによるトポロジカルソート。
@@ -52,7 +54,111 @@ export function hasCycle(edges: PipelineEdge[], widgetIds: number[]): boolean {
 	return topologicalSort(edges, widgetIds) === null;
 }
 
-/** targetパネルのupstream出力を収集 */
+/**
+ * 単一条件を評価する（複合条件の各パートを処理）。
+ *
+ * サポートする条件形式:
+ * - "contains:キーワード"    — キーワード含有（大文字小文字区別なし）
+ * - "not:キーワード"         — キーワード非含有
+ * - "regex:パターン"         — 正規表現マッチ（大文字小文字区別なし）
+ * - "startsWith:テキスト"    — 前方一致
+ * - "endsWith:テキスト"      — 後方一致
+ * - "equals:テキスト"        — 完全一致（trimされた出力と比較）
+ * - "length>N" 等            — 出力長の数値比較
+ * - その他                   — キーワード含有チェック（デフォルト）
+ */
+function evaluateSingleCondition(
+	cond: string,
+	sourceOutput: string,
+): boolean {
+	const trimmed = cond.trim();
+	if (trimmed === "") return true;
+
+	const lower = sourceOutput.toLowerCase();
+	const condLower = trimmed.toLowerCase();
+
+	// "contains:キーワード"
+	if (condLower.startsWith("contains:")) {
+		return lower.includes(condLower.slice(9).trim());
+	}
+	// "not:キーワード"
+	if (condLower.startsWith("not:")) {
+		return !lower.includes(condLower.slice(4).trim());
+	}
+	// "regex:パターン" — 正規表現マッチ
+	if (trimmed.toLowerCase().startsWith("regex:")) {
+		const pattern = trimmed.slice(6).trim();
+		try {
+			return new RegExp(pattern, "i").test(sourceOutput);
+		} catch {
+			// 不正な正規表現の場合はfalse
+			return false;
+		}
+	}
+	// "startsWith:テキスト"
+	if (condLower.startsWith("startswith:")) {
+		return lower.startsWith(condLower.slice(11).trim());
+	}
+	// "endsWith:テキスト"
+	if (condLower.startsWith("endswith:")) {
+		return lower.endsWith(condLower.slice(9).trim());
+	}
+	// "equals:テキスト"
+	if (condLower.startsWith("equals:")) {
+		return sourceOutput.trim().toLowerCase() === condLower.slice(7).trim();
+	}
+	// "length>N" 形式
+	const lenMatch = condLower.match(/^length\s*([><=!]+)\s*(\d+)$/);
+	if (lenMatch) {
+		const op = lenMatch[1];
+		const n = Number(lenMatch[2]);
+		switch (op) {
+			case ">": return sourceOutput.length > n;
+			case "<": return sourceOutput.length < n;
+			case ">=": return sourceOutput.length >= n;
+			case "<=": return sourceOutput.length <= n;
+			case "==": return sourceOutput.length === n;
+			case "!=": return sourceOutput.length !== n;
+			default: return true;
+		}
+	}
+	// デフォルト: キーワード含有チェック
+	return lower.includes(condLower);
+}
+
+/**
+ * エッジ条件を評価: source出力が条件を満たすか判定。
+ *
+ * 複合条件のサポート:
+ * - " AND " で区切ると全条件がtrueの場合のみtrue
+ * - " OR "  で区切るといずれかの条件がtrueならtrue
+ * - AND/ORの混在はサポートしない（ANDを優先）
+ */
+export function evaluateEdgeCondition(
+	condition: string | undefined,
+	sourceOutput: string,
+): boolean {
+	if (!condition || condition.trim() === "") return true;
+
+	const trimmed = condition.trim();
+
+	// OR 複合条件
+	if (trimmed.includes(" OR ")) {
+		const parts = trimmed.split(" OR ");
+		return parts.some((part) => evaluateSingleCondition(part, sourceOutput));
+	}
+
+	// AND 複合条件
+	if (trimmed.includes(" AND ")) {
+		const parts = trimmed.split(" AND ");
+		return parts.every((part) => evaluateSingleCondition(part, sourceOutput));
+	}
+
+	// 単一条件
+	return evaluateSingleCondition(trimmed, sourceOutput);
+}
+
+/** targetパネルのupstream出力を収集（条件付きエッジをフィルタ） */
 export function collectUpstreamOutputs(
 	targetId: number,
 	edges: PipelineEdge[],
@@ -63,31 +169,13 @@ export function collectUpstreamOutputs(
 		if (edge.targetWidgetId === targetId) {
 			const output = outputs[edge.sourceWidgetId];
 			if (output !== undefined && output !== "") {
+				// 条件付きエッジ: 条件不成立ならスキップ
+				if (!evaluateEdgeCondition(edge.condition, output)) continue;
 				result.push({ widgetId: edge.sourceWidgetId, output });
 			}
 		}
 	}
 	return result;
-}
-
-/** パネルタイプのラベルを取得 */
-function getWidgetTypeLabel(widgetId: number, gridRef: HTMLDivElement): string {
-	const root = gridRef.querySelector(`[data-widget-id="${widgetId}"]`);
-	const type = root?.getAttribute("data-widget-type") ?? "unknown";
-	switch (type) {
-		case "text":
-			return "テキスト Widget";
-		case "visual":
-			return "ビジュアル Widget";
-		case "ai":
-			return "AI連携 Widget";
-		case "object":
-			return "オブジェクト Widget";
-		case "folder":
-			return "フォルダ Widget";
-		default:
-			return "Widget";
-	}
 }
 
 /** API入力の最大バイト数 */
@@ -182,11 +270,6 @@ export function getPanelOutput(
 	}
 }
 
-/** パネルがAIパネルかどうか判定 */
-function isAiPanel(widgetId: number, gridRef: HTMLDivElement): boolean {
-	const root = gridRef.querySelector(`[data-widget-id="${widgetId}"]`);
-	return root?.getAttribute("data-widget-type") === "ai";
-}
 
 export interface PipelineCallbacks {
 	onStepStart: (widgetId: number) => void;
@@ -241,7 +324,7 @@ export async function executePipeline(
 
 		callbacks.onStepStart(widgetId);
 
-		if (!isAiPanel(widgetId, gridRef)) {
+		if (getWidgetType(gridRef, widgetId) !== "ai") {
 			// 非AIパネル: コンテンツをキャッシュ
 			const output = getPanelOutput(widgetId, gridRef);
 			outputs[widgetId] = output;
@@ -266,59 +349,86 @@ export async function executePipeline(
 			return;
 		}
 
+		// 条件分岐チェック: すべてのupstreamエッジ条件を満たさない場合スキップ
+		const incomingEdges = edges.filter((e) => e.targetWidgetId === widgetId);
+		const hasConditionalInput = incomingEdges.some((e) => e.condition);
+		if (hasConditionalInput) {
+			const anyPassing = incomingEdges.some((e) => {
+				const srcOutput = outputs[e.sourceWidgetId] ?? "";
+				return evaluateEdgeCondition(e.condition, srcOutput);
+			});
+			if (!anyPassing) {
+				// 条件不成立: スキップ
+				outputs[widgetId] = "";
+				callbacks.onStepComplete(widgetId, "");
+				updateStatusBadge(gridRef, widgetId, "skipped", "スキップ");
+				continue;
+			}
+		}
+
 		const upstream = collectUpstreamOutputs(widgetId, edges, outputs).map(
 			(u) => ({
 				...u,
-				label: getWidgetTypeLabel(u.widgetId, gridRef),
+				label: TYPE_LABELS[getWidgetType(gridRef, u.widgetId) as WidgetType] ?? "Widget",
 			}),
 		);
 		const augmentedPrompt = buildAugmentedPrompt(prompt, upstream);
 
-		try {
-			let output: string;
-			if (orchMode !== "none") {
-				const run = await orchestrateAgent(agentId, augmentedPrompt, orchMode);
-				// オーケストレーションはWebSocketイベントで完了を待つため、
-				// ここではrun.idを返して次へ進む
-				// MVPでは同期実行のみサポート: orchestrateの結果を使用
-				output = `[orchestration:${run.id}]`;
-			} else {
-				const execution = await executeAgent(agentId, augmentedPrompt);
-				if (execution.status === "completed") {
-					output = execution.output_text ?? "";
-				} else {
-					throw new Error(execution.error_message ?? "実行失敗");
-				}
-			}
+		// リトライ設定を収集
+		const maxRetries = Math.max(
+			0,
+			...incomingEdges.map((e) => e.maxRetries ?? 0),
+		);
+		const retryDelay = Math.max(
+			1000,
+			...incomingEdges.map((e) => e.retryDelayMs ?? 1000),
+		);
 
+		let lastError = "";
+		let succeeded = false;
+
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
 			if (signal.aborted) {
 				callbacks.onPipelineFail("パイプラインが停止されました。");
 				return;
 			}
 
-			outputs[widgetId] = output;
-			callbacks.onStepComplete(widgetId, output);
-
-			// DOM上の出力エリアにも反映
-			const outEl = gridRef.querySelector(`[data-output-id="${widgetId}"]`);
-			if (outEl) outEl.textContent = output;
-			const badge = gridRef.querySelector(`[data-status-id="${widgetId}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-completed";
-				badge.textContent = "完了";
+			if (attempt > 0) {
+				updateStatusBadge(gridRef, widgetId, "running", `リトライ ${attempt}/${maxRetries}...`);
+				await new Promise((r) => setTimeout(r, retryDelay));
 			}
-		} catch (err) {
-			const errMsg = String(err);
-			callbacks.onStepFail(widgetId, errMsg);
-			callbacks.onPipelineFail(`Panel #${widgetId}: ${errMsg}`);
 
-			const badge = gridRef.querySelector(`[data-status-id="${widgetId}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-failed";
-				badge.textContent = "失敗";
+			try {
+				let output: string;
+				if (orchMode !== "none") {
+					const run = await orchestrateAgent(agentId, augmentedPrompt, orchMode);
+					output = `[orchestration:${run.id}]`;
+				} else {
+					const execution = await executeAgent(agentId, augmentedPrompt);
+					if (execution.status === "completed") {
+						output = execution.output_text ?? "";
+					} else {
+						throw new Error(execution.error_message ?? "実行失敗");
+					}
+				}
+
+				outputs[widgetId] = output;
+				callbacks.onStepComplete(widgetId, output);
+
+				setOutputText(gridRef, widgetId, output);
+				updateStatusBadge(gridRef, widgetId, "completed", "完了");
+				succeeded = true;
+				break;
+			} catch (err) {
+				lastError = String(err);
 			}
-			const outEl = gridRef.querySelector(`[data-output-id="${widgetId}"]`);
-			if (outEl) outEl.textContent = errMsg;
+		}
+
+		if (!succeeded) {
+			callbacks.onStepFail(widgetId, lastError);
+			callbacks.onPipelineFail(`Panel #${widgetId}: ${lastError}`);
+			updateStatusBadge(gridRef, widgetId, "failed", "失敗");
+			setOutputText(gridRef, widgetId, lastError);
 			return;
 		}
 	}

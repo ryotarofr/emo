@@ -39,7 +39,7 @@ base64 = "0.22"
 url = "2"
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors"] }
-tokio = { version = "1", features = ["net", "sync", "macros"] }
+tokio = { version = "1", features = ["net", "sync", "macros", "process"] }
 async-trait = "0.1"
 futures-util = "0.3"
 

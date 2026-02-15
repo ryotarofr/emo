@@ -5,6 +5,8 @@ import {
 	orchestrateAgent,
 	rejectOrchestration,
 } from "../../utils/agent";
+import { TYPE_LABELS } from "./constants";
+import { setOutputText, updateStatusBadge } from "./domHelpers";
 import {
 	buildFolderOutput,
 	buildTreeHtml,
@@ -18,13 +20,10 @@ import {
 	collectUpstreamOutputs,
 	getPanelOutput,
 } from "./pipelineEngine";
-import type { PipelineEdge } from "./types";
+import type { PipelineEdge, WidgetDataContext, WidgetType } from "./types";
 
-export interface GridEventHandlers {
+export interface GridEventHandlers extends WidgetDataContext {
 	handleEditWidget: (widgetId: number) => void;
-	getPipelineEdges: () => PipelineEdge[];
-	getPanelOutputs: () => Record<number, string>;
-	setPanelOutput: (widgetId: number, output: string) => void;
 }
 
 /**
@@ -161,15 +160,8 @@ function handleAiExecute(
 		const prompt = aiRoot?.getAttribute("data-ai-prompt") ?? "";
 		const agentId = aiRoot?.getAttribute("data-ai-agent-id") ?? "";
 		if (!agentId) {
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-failed";
-				badge.textContent = "未設定";
-			}
-			const outputArea = gridRef.querySelector(`[data-output-id="${wid}"]`);
-			if (outputArea)
-				outputArea.textContent =
-					"先にエージェント設定を行ってください。パネルを編集して設定してください。";
+			updateStatusBadge(gridRef, wid, "failed", "未設定");
+			setOutputText(gridRef, wid, "先にエージェント設定を行ってください。パネルを編集して設定してください。");
 			e.stopPropagation();
 			return;
 		}
@@ -220,58 +212,30 @@ function handleAiExecute(
 					const srcRoot = gridRef.querySelector(
 						`[data-widget-id="${u.widgetId}"]`,
 					);
-					const type = srcRoot?.getAttribute("data-widget-type") ?? "unknown";
-					const typeLabels: Record<string, string> = {
-						text: "テキスト Widget",
-						visual: "ビジュアル Widget",
-						ai: "AI連携 Widget",
-						object: "オブジェクト Widget",
-						folder: "フォルダ Widget",
-					};
-					return { ...u, label: typeLabels[type] ?? "Widget" };
+					const type = (srcRoot?.getAttribute("data-widget-type") ?? "unknown") as WidgetType;
+					return { ...u, label: TYPE_LABELS[type] ?? "Widget" };
 				},
 			);
 			const augmentedPrompt = buildAugmentedPrompt(prompt, upstream);
 
-			// ステータスバッジを更新
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-running";
-				badge.textContent = "実行中...";
-			}
-			const outputArea = gridRef.querySelector(`[data-output-id="${wid}"]`);
-			if (outputArea) outputArea.textContent = "";
+			updateStatusBadge(gridRef, wid, "running", "実行中...");
+			setOutputText(gridRef, wid, "");
 
 			executeAgent(agentId, augmentedPrompt)
 				.then((execution) => {
-					const badgeEl = gridRef.querySelector(`[data-status-id="${wid}"]`);
-					const outEl = gridRef.querySelector(`[data-output-id="${wid}"]`);
 					if (execution.status === "completed") {
-						if (badgeEl) {
-							badgeEl.className = "ai-status-badge ai-status-completed";
-							badgeEl.textContent = "完了";
-						}
+						updateStatusBadge(gridRef, wid, "completed", "完了");
 						const outputText = execution.output_text ?? "";
-						if (outEl) outEl.textContent = outputText;
-						// 出力をキャッシュ
+						setOutputText(gridRef, wid, outputText);
 						handlers.setPanelOutput(wid, outputText);
 					} else {
-						if (badgeEl) {
-							badgeEl.className = "ai-status-badge ai-status-failed";
-							badgeEl.textContent = "失敗";
-						}
-						if (outEl)
-							outEl.textContent = execution.error_message ?? "Unknown error";
+						updateStatusBadge(gridRef, wid, "failed", "失敗");
+						setOutputText(gridRef, wid, execution.error_message ?? "Unknown error");
 					}
 				})
 				.catch((err) => {
-					const badgeEl = gridRef.querySelector(`[data-status-id="${wid}"]`);
-					const outEl = gridRef.querySelector(`[data-output-id="${wid}"]`);
-					if (badgeEl) {
-						badgeEl.className = "ai-status-badge ai-status-failed";
-						badgeEl.textContent = "エラー";
-					}
-					if (outEl) outEl.textContent = String(err);
+					updateStatusBadge(gridRef, wid, "failed", "エラー");
+					setOutputText(gridRef, wid, String(err));
 				});
 		}
 	}
@@ -293,37 +257,22 @@ function handleOrchestrate(
 		const orchMode =
 			aiRoot?.getAttribute("data-ai-orchestration-mode") ?? "automatic";
 		if (!agentId) {
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-failed";
-				badge.textContent = "未設定";
-			}
+			updateStatusBadge(gridRef, wid, "failed", "未設定");
 			e.stopPropagation();
 			return;
 		}
 		if (prompt) {
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-running";
-				badge.textContent = "オーケストレーション中...";
-			}
-			const outputArea = gridRef.querySelector(`[data-output-id="${wid}"]`);
-			if (outputArea) outputArea.textContent = "";
+			updateStatusBadge(gridRef, wid, "running", "オーケストレーション中...");
+			setOutputText(gridRef, wid, "");
 
 			orchestrateAgent(agentId, prompt, orchMode)
 				.then((run) => {
 					console.log("[dashboard] Orchestration started:", run.id);
-					// 承認/却下用にrun IDを保存
 					aiRoot?.setAttribute("data-orchestration-run-id", run.id);
 				})
 				.catch((err) => {
-					const badgeEl = gridRef.querySelector(`[data-status-id="${wid}"]`);
-					if (badgeEl) {
-						badgeEl.className = "ai-status-badge ai-status-failed";
-						badgeEl.textContent = "エラー";
-					}
-					const outEl = gridRef.querySelector(`[data-output-id="${wid}"]`);
-					if (outEl) outEl.textContent = String(err);
+					updateStatusBadge(gridRef, wid, "failed", "エラー");
+					setOutputText(gridRef, wid, String(err));
 				});
 		}
 	}
@@ -342,24 +291,15 @@ function handleApprove(
 		);
 		const runId = aiRoot?.getAttribute("data-orchestration-run-id") ?? "";
 		if (runId) {
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-running";
-				badge.textContent = "実行中...";
-			}
+			updateStatusBadge(gridRef, wid, "running", "実行中...");
 			const planArea = gridRef.querySelector(
 				`[data-plan-id="${wid}"]`,
 			) as HTMLElement | null;
 			if (planArea) planArea.style.display = "none";
 
 			approveOrchestration(runId).catch((err) => {
-				const badgeEl = gridRef.querySelector(`[data-status-id="${wid}"]`);
-				if (badgeEl) {
-					badgeEl.className = "ai-status-badge ai-status-failed";
-					badgeEl.textContent = "エラー";
-				}
-				const outEl = gridRef.querySelector(`[data-output-id="${wid}"]`);
-				if (outEl) outEl.textContent = String(err);
+				updateStatusBadge(gridRef, wid, "failed", "エラー");
+				setOutputText(gridRef, wid, String(err));
 			});
 		}
 	}
@@ -458,11 +398,7 @@ function handleReject(
 		);
 		const runId = aiRoot?.getAttribute("data-orchestration-run-id") ?? "";
 		if (runId) {
-			const badge = gridRef.querySelector(`[data-status-id="${wid}"]`);
-			if (badge) {
-				badge.className = "ai-status-badge ai-status-failed";
-				badge.textContent = "却下";
-			}
+			updateStatusBadge(gridRef, wid, "failed", "却下");
 			const planArea = gridRef.querySelector(
 				`[data-plan-id="${wid}"]`,
 			) as HTMLElement | null;

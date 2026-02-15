@@ -1,6 +1,6 @@
 import { WIDGET_DEFS } from "./constants";
 import { DEFAULT_EXCLUDE_PATTERNS } from "./folderReader";
-import type { PanelConfig, VisualSubType, WidgetType } from "./types";
+import type { PanelConfig, WidgetType } from "./types";
 
 export function escapeHtml(str: string): string {
 	return str
@@ -71,16 +71,21 @@ export function makeAiContent(
 	aiLinkedPanels: number[],
 	agentId: string,
 	orchestrationMode = "none",
+	enabledTools: string[] = [],
 ): string {
 	const t = escapeHtml(title);
 	const p = escapeHtml(aiPrompt);
 	const linked = aiLinkedPanels.join(",");
 	const aid = escapeHtml(agentId);
+	const toolsAttr = enabledTools.join(",");
 	const promptPreview = aiPrompt
 		? `<div class="ai-prompt-preview">${escapeHtml(aiPrompt.length > 80 ? `${aiPrompt.slice(0, 80)}...` : aiPrompt)}</div>`
 		: "";
 	const linkedLabel = aiLinkedPanels.length
 		? `<div class="ai-linked-label">連携: ${aiLinkedPanels.map((x) => `#${x}`).join(", ")}</div>`
+		: "";
+	const toolsLabel = enabledTools.length
+		? `<div class="ai-tools-label">ツール: ${enabledTools.join(", ")}</div>`
 		: "";
 	const execArea = `<div class="ai-exec-area"><button class="ai-exec-btn" data-action="ai-execute" data-widget-id="${id}" type="button">実行</button>${
 		orchestrationMode !== "none"
@@ -95,7 +100,7 @@ export function makeAiContent(
 		orchestrationMode !== "none"
 			? `<div class="ai-sub-agents-area" data-sub-agents-id="${id}"></div>`
 			: "";
-	return `<div class="widget-ai" data-widget-id="${id}" data-widget-type="ai" data-ai-prompt="${p}" data-ai-linked="${linked}" data-ai-agent-id="${aid}" data-ai-orchestration-mode="${orchestrationMode}">${portsHtml(id)}<div class="widget-header" style="background:${color}20;color:${color}"><span>${t}</span><div class="widget-header-actions"><span>#${id}</span>${menuHtml(id)}</div></div><div class="widget-body"><div class="ai-widget-content">${promptPreview}${linkedLabel}${execArea}${planArea}${subAgentsArea}</div></div></div>`;
+	return `<div class="widget-ai" data-widget-id="${id}" data-widget-type="ai" data-ai-prompt="${p}" data-ai-linked="${linked}" data-ai-agent-id="${aid}" data-ai-orchestration-mode="${orchestrationMode}" data-ai-enabled-tools="${toolsAttr}">${portsHtml(id)}<div class="widget-header" style="background:${color}20;color:${color}"><span>${t}</span><div class="widget-header-actions"><span>#${id}</span>${menuHtml(id)}</div></div><div class="widget-body"><div class="ai-widget-content">${promptPreview}${linkedLabel}${toolsLabel}${execArea}${planArea}${subAgentsArea}</div></div></div>`;
 }
 
 export function makeObjectContent(
@@ -138,18 +143,7 @@ export function makeWidgetContent(
 	id: number,
 	title: string,
 	color: string,
-	cfg?: {
-		textBody?: string;
-		visualSubType?: VisualSubType;
-		aiPrompt?: string;
-		aiLinkedPanels?: number[];
-		aiAgentId?: string;
-		aiOrchestrationMode?: string;
-		folderPath?: string;
-		folderMaxDepth?: number;
-		folderExcludePatterns?: string;
-		diagramCode?: string;
-	},
+	cfg?: Partial<PanelConfig>,
 ): string {
 	switch (type) {
 		case "text":
@@ -176,6 +170,7 @@ export function makeWidgetContent(
 				cfg?.aiLinkedPanels ?? [],
 				cfg?.aiAgentId ?? "",
 				cfg?.aiOrchestrationMode ?? "none",
+				cfg?.aiEnabledTools ?? [],
 			);
 		case "object":
 			return makeObjectContent(id, title, color);
@@ -218,6 +213,7 @@ export function defaultConfigFor(type: WidgetType): PanelConfig {
 		aiMaxTokens: 1024,
 		aiProviderId: "",
 		aiOrchestrationMode: "none",
+		aiEnabledTools: [],
 		folderPath: "",
 		folderMaxDepth: 3,
 		folderExcludePatterns:

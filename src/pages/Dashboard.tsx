@@ -4,22 +4,29 @@ import { useParams } from "@solidjs/router";
 import {
 	ArrowLeftIcon,
 	BarChart3Icon,
+	BookmarkIcon,
 	BotIcon,
 	BoxIcon,
 	CheckIcon,
+	ClockIcon,
+	DownloadIcon,
 	FileTextIcon,
 	FolderIcon,
 	FolderOpenIcon,
+	MessageSquareIcon,
 	MinusIcon,
 	MoveHorizontalIcon,
 	MoveVerticalIcon,
 	PlayIcon,
 	PlusIcon,
 	SaveIcon,
+	SettingsIcon,
 	Share2Icon,
 	SquareIcon,
 	TableIcon,
 	Trash2Icon,
+	UploadIcon,
+	WrenchIcon,
 	XIcon,
 	ZapIcon,
 } from "lucide-solid";
@@ -37,12 +44,14 @@ import { NavItemsContext } from "../App";
 import PlainTextEditor from "../components/lexical/components/PlainTextEditor";
 import RichTextEditor from "../components/lexical/components/RichTextEditor";
 import { useAuth } from "../contexts/AuthContext";
-import type { EventEnvelope, LlmProvider } from "../utils/agent";
+import type { AgentMessage, EventEnvelope, LlmProvider } from "../utils/agent";
 import {
 	createAgent,
 	createWorkflow,
 	executeAgent,
+	getExecutionMessages,
 	getLlmProviders,
+	updateToolPermissions,
 } from "../utils/agent";
 import {
 	connectWebSocket,
@@ -57,6 +66,7 @@ import {
 	connectionPath,
 } from "./dashboard/connectionGeometry";
 import {
+	AVAILABLE_TOOLS,
 	COLOR_PRESETS,
 	VISUAL_SUBTYPES,
 	WIDGET_DEFS,
@@ -91,16 +101,29 @@ import {
 } from "./dashboard/pipelineEngine";
 import { setupPortDragHandler } from "./dashboard/portDragHandler";
 import type {
+	CollaborationUser,
 	Connection,
+	DashboardTemplate,
 	PanelConfig,
 	PanelDraft,
 	PipelineEdge,
 	PipelineStatus,
+	TimelineEntry,
+	ToolDefinition,
 	VisualSubType,
 	WidgetType,
 } from "./dashboard/types";
 import { defaultConfigFor, makeWidgetContent } from "./dashboard/widgetContent";
 import { handleWsEvent } from "./dashboard/wsEventHandler";
+import { ToastContainer, toastManager } from "../components/Toast";
+import { createTimelineEntry } from "./dashboard/executionTimeline";
+import {
+	deleteTemplate,
+	downloadSnapshot,
+	importSnapshot,
+	loadTemplates,
+	saveTemplate,
+} from "./dashboard/templateManager";
 
 // GridStackはデフォルトでtextContent（XSS対策）を使用する。
 // ウィジェットHTML（チャート、テーブル、リッチテキスト等）を正しく描画するためinnerHTMLに上書きする。
@@ -159,11 +182,40 @@ export default function Dashboard() {
 	>(null);
 	let pipelineAbortController: AbortController | null = null;
 
-	// テンプレート進捗
+	// テンプレート進捗（null = 非表示、{ message } = 表示中）
 	const [templateProgress, setTemplateProgress] = createSignal<{
-		active: boolean;
 		message: string;
 	} | null>(null);
+
+	// === 1. 実行タイムライン ===
+	const [timelineEntries, setTimelineEntries] = createSignal<TimelineEntry[]>([]);
+	const [timelineOpen, setTimelineOpen] = createSignal(false);
+
+	// === 3. テンプレート保存 ===
+	const [savedTemplates, setSavedTemplates] = createSignal<DashboardTemplate[]>(loadTemplates());
+	const [templateModalOpen, setTemplateModalOpen] = createSignal(false);
+	const [templateName, setTemplateName] = createSignal("");
+
+	// === 5. 会話履歴 ===
+	const [chatHistoryOpen, setChatHistoryOpen] = createSignal(false);
+	const [chatMessages, setChatMessages] = createSignal<AgentMessage[]>([]);
+	const [chatHistoryTitle, setChatHistoryTitle] = createSignal("");
+
+	// === 6. プロバイダー管理 ===
+	const [providerModalOpen, setProviderModalOpen] = createSignal(false);
+
+	// === 8. スナップショットインポート ===
+	const [snapshotImportOpen, setSnapshotImportOpen] = createSignal(false);
+	const [snapshotJson, setSnapshotJson] = createSignal("");
+
+	// === 9. ツール/プラグイン ===
+	const [toolDefinitions, setToolDefinitions] = createSignal<ToolDefinition[]>([]);
+
+	// === 10. コラボレーション ===
+	// TODO: WebSocketイベントで setCollaborationUsers を呼び出す（バックエンド実装待ち）
+	const [collaborationUsers, _setCollaborationUsers] = createSignal<
+		CollaborationUser[]
+	>([]);
 
 	// エッジコンテキストメニュー
 	const [edgeContextMenu, setEdgeContextMenu] = createSignal<{
@@ -216,19 +268,26 @@ export default function Dashboard() {
 
 	// --- キーボードショートカット ---
 	const handleKeyDown = (e: KeyboardEvent) => {
+		// Escape -> モーダル / エディターを閉じる（モーダル優先）
+		if (e.key === "Escape") {
+			if (templateModalOpen()) { e.preventDefault(); setTemplateModalOpen(false); return; }
+			if (chatHistoryOpen()) { e.preventDefault(); setChatHistoryOpen(false); return; }
+			if (providerModalOpen()) { e.preventDefault(); setProviderModalOpen(false); return; }
+			if (snapshotImportOpen()) { e.preventDefault(); setSnapshotImportOpen(false); return; }
+			if (editorOpen()) {
+				e.preventDefault();
+				setEditingWidgetId(null);
+				setEditorOpen(false);
+				return;
+			}
+		}
+
 		if (!editorOpen()) return;
 
 		// Alt長押し -> プレビュー
 		if (e.key === "Alt") {
 			e.preventDefault();
 			setPeeking(true);
-		}
-
-		// Escape -> 閉じる
-		if (e.key === "Escape") {
-			e.preventDefault();
-			setEditingWidgetId(null);
-			setEditorOpen(false);
 		}
 
 		// Ctrl+Enter -> パネル追加（エディタービュー時のみ）
@@ -248,12 +307,15 @@ export default function Dashboard() {
 		}
 	};
 
+	// ESCキーはモーダル閉じにも使うので常時登録
+	onMount(() => {
+		document.addEventListener("keydown", handleKeyDown);
+	});
+
 	createEffect(() => {
 		if (editorOpen()) {
-			document.addEventListener("keydown", handleKeyDown);
 			document.addEventListener("keyup", handleKeyUp);
 		} else {
-			document.removeEventListener("keydown", handleKeyDown);
 			document.removeEventListener("keyup", handleKeyUp);
 			setPeeking(false);
 		}
@@ -324,16 +386,37 @@ export default function Dashboard() {
 		setPanelOutputs((prev) => ({ ...prev, [widgetId]: output }));
 	};
 
+	const MAX_TIMELINE_ENTRIES = 200;
+
+	const addTimelineEntry = (
+		widgetId: number,
+		status: "running" | "completed" | "failed",
+		message: string,
+		durationMs?: number,
+	) => {
+		const root = gridRef.querySelector(`[data-widget-id="${widgetId}"]`);
+		const header = root?.closest(".grid-stack-item")?.querySelector(".widget-header span:first-child");
+		const title = header?.textContent ?? `Widget #${widgetId}`;
+		const entry = createTimelineEntry(widgetId, title, status, message);
+		if (durationMs !== undefined) entry.durationMs = durationMs;
+		setTimelineEntries((prev) => [...prev, entry].slice(-MAX_TIMELINE_ENTRIES));
+	};
+
 	const handlePipelineExecute = () => {
 		const edges = pipelineEdges();
 		if (edges.length === 0) return;
 
 		pipelineAbortController = new AbortController();
 		setPipelineStatus("running");
+		toastManager.addToast({ id: `pl-start-${Date.now()}`, type: "info", title: "パイプライン実行開始" });
+
+		const stepStartTimes: Record<number, number> = {};
 
 		const callbacks: PipelineCallbacks = {
 			onStepStart: (widgetId) => {
 				setCurrentPipelineStep(widgetId);
+				stepStartTimes[widgetId] = Date.now();
+				addTimelineEntry(widgetId, "running", "実行開始");
 				const badge = gridRef.querySelector(`[data-status-id="${widgetId}"]`);
 				if (badge) {
 					badge.className = "ai-status-badge ai-status-running";
@@ -342,19 +425,24 @@ export default function Dashboard() {
 			},
 			onStepComplete: (widgetId, output) => {
 				setPanelOutput(widgetId, output);
+				const duration = stepStartTimes[widgetId] ? Date.now() - stepStartTimes[widgetId] : undefined;
+				addTimelineEntry(widgetId, "completed", "完了", duration);
 			},
-			onStepFail: (widgetId, _error) => {
-				void widgetId;
+			onStepFail: (widgetId, error) => {
+				addTimelineEntry(widgetId, "failed", error);
+				toastManager.addToast({ id: `step-fail-${widgetId}`, type: "error", title: `Panel #${widgetId} 失敗`, message: error.slice(0, 80) });
 			},
 			onPipelineComplete: () => {
 				setPipelineStatus("completed");
 				setCurrentPipelineStep(null);
 				pipelineAbortController = null;
+				toastManager.addToast({ id: `pl-done-${Date.now()}`, type: "success", title: "パイプライン完了" });
 			},
-			onPipelineFail: (_error) => {
+			onPipelineFail: (error) => {
 				setPipelineStatus("failed");
 				setCurrentPipelineStep(null);
 				pipelineAbortController = null;
+				toastManager.addToast({ id: `pl-fail-${Date.now()}`, type: "error", title: "パイプライン失敗", message: error.slice(0, 100) });
 			},
 		};
 
@@ -424,7 +512,7 @@ export default function Dashboard() {
 		const userId = auth.user()?.id;
 		if (!userId) return;
 
-		setTemplateProgress({ active: true, message: "フォルダを選択..." });
+		setTemplateProgress({ message: "フォルダを選択..." });
 
 		// フォルダ選択
 		const folderPath = await openFolderPicker();
@@ -435,7 +523,7 @@ export default function Dashboard() {
 
 		try {
 			// パネル作成
-			setTemplateProgress({ active: true, message: "パネルを配置中..." });
+			setTemplateProgress({ message: "パネルを配置中..." });
 			const createdWidgetIds: number[] = [];
 
 			for (const panelDef of tmpl.panels) {
@@ -454,6 +542,9 @@ export default function Dashboard() {
 				if (panelDef.aiPrompt) cfg.aiPrompt = panelDef.aiPrompt;
 				if (panelDef.aiSystemPrompt) cfg.aiSystemPrompt = panelDef.aiSystemPrompt;
 				if (panelDef.aiMaxTokens) cfg.aiMaxTokens = panelDef.aiMaxTokens;
+				if (panelDef.aiEnabledTools) cfg.aiEnabledTools = panelDef.aiEnabledTools;
+				if (panelDef.aiOrchestrationMode) cfg.aiOrchestrationMode = panelDef.aiOrchestrationMode;
+				if (panelDef.textBody !== undefined) cfg.textBody = panelDef.textBody;
 
 				// AIパネル用にエージェント自動作成
 				if (panelDef.needsAgent) {
@@ -468,6 +559,17 @@ export default function Dashboard() {
 						max_tokens: panelDef.aiMaxTokens ?? cfg.aiMaxTokens,
 					});
 					cfg.aiAgentId = agent.id;
+
+					// テンプレートで指定されたツール権限をバックエンドに同期
+					if (panelDef.aiEnabledTools && panelDef.aiEnabledTools.length > 0) {
+						await updateToolPermissions(
+							agent.id,
+							panelDef.aiEnabledTools.map((name) => ({
+								tool_name: name,
+								is_enabled: true,
+							})),
+						);
+					}
 				}
 
 				g.addWidget({
@@ -482,16 +584,20 @@ export default function Dashboard() {
 			for (const edgeDef of tmpl.edges) {
 				const sourceId = createdWidgetIds[edgeDef.sourceIndex];
 				const targetId = createdWidgetIds[edgeDef.targetIndex];
-				addPipelineEdge({
+				const edge: PipelineEdge = {
 					id: `edge-${sourceId}-${targetId}`,
 					sourceWidgetId: sourceId,
 					targetWidgetId: targetId,
 					autoChain: true,
-				});
+				};
+				if (edgeDef.condition) edge.condition = edgeDef.condition;
+				if (edgeDef.maxRetries !== undefined) edge.maxRetries = edgeDef.maxRetries;
+				if (edgeDef.retryDelayMs !== undefined) edge.retryDelayMs = edgeDef.retryDelayMs;
+				addPipelineEdge(edge);
 			}
 
 			// フォルダ読み込み
-			setTemplateProgress({ active: true, message: "フォルダを読み込み中..." });
+			setTemplateProgress({ message: "フォルダを読み込み中..." });
 			const folderWidgetId = createdWidgetIds[
 				tmpl.panels.findIndex((p) => p.needsFolderPath)
 			];
@@ -525,7 +631,7 @@ export default function Dashboard() {
 			for (const aiIdx of aiPanelIndices) {
 				const aiWidgetId = createdWidgetIds[aiIdx];
 				const aiDef = tmpl.panels[aiIdx];
-				setTemplateProgress({ active: true, message: "AIを実行中..." });
+				setTemplateProgress({ message: "AIを実行中..." });
 
 				// upstream出力を収集
 				const currentOutputs: Record<number, string> = {};
@@ -606,17 +712,19 @@ export default function Dashboard() {
 				}
 			}
 
-			setTemplateProgress({ active: true, message: "完了!" });
+			setTemplateProgress({ message: "完了!" });
 			setTimeout(() => setTemplateProgress(null), 2000);
 			refreshConnections();
 			saveLayout(g, params.id);
 		} catch (err) {
 			console.error("Template execution failed:", err);
-			setTemplateProgress({
-				active: false,
-				message: `エラー: ${err}`,
+			setTemplateProgress(null);
+			toastManager.addToast({
+				id: `tmpl-err-${Date.now()}`,
+				type: "error",
+				title: "テンプレート実行失敗",
+				message: String(err).slice(0, 100),
 			});
-			setTimeout(() => setTemplateProgress(null), 5000);
 		}
 	};
 
@@ -693,11 +801,14 @@ export default function Dashboard() {
 		}
 
 		const node = el.gridstackNode;
-		// オーケストレーションモード
+		// オーケストレーションモード・有効ツール
 		let aiOrchestrationMode = "none";
+		let aiEnabledTools: string[] = [];
 		if (type === "ai") {
 			aiOrchestrationMode =
 				root?.getAttribute("data-ai-orchestration-mode") ?? "none";
+			const toolsAttr = root?.getAttribute("data-ai-enabled-tools") ?? "";
+			aiEnabledTools = toolsAttr ? toolsAttr.split(",").filter(Boolean) : [];
 		}
 
 		// フォルダフィールド
@@ -737,6 +848,7 @@ export default function Dashboard() {
 			aiMaxTokens: 1024,
 			aiProviderId: "",
 			aiOrchestrationMode,
+			aiEnabledTools,
 			folderPath,
 			folderMaxDepth,
 			folderExcludePatterns,
@@ -831,10 +943,36 @@ export default function Dashboard() {
 				});
 				cfg = { ...cfg, aiAgentId: agent.id };
 				setPanelConfig(cfg);
+
+				// ツール権限をバックエンドに同期
+				if (cfg.aiEnabledTools.length > 0) {
+					await updateToolPermissions(
+						agent.id,
+						AVAILABLE_TOOLS.map((t) => ({
+							tool_name: t.name,
+							is_enabled: cfg.aiEnabledTools.includes(t.name),
+						})),
+					);
+				}
 			} catch (err) {
 				console.error("Failed to create agent:", err);
 				setAddError(`エージェント作成に失敗しました: ${err}`);
 				return;
+			}
+		}
+
+		// 既存エージェントのツール権限を更新
+		if (cfg.aiAgentId && cfg.type === "ai") {
+			try {
+				await updateToolPermissions(
+					cfg.aiAgentId,
+					AVAILABLE_TOOLS.map((t) => ({
+						tool_name: t.name,
+						is_enabled: cfg.aiEnabledTools.includes(t.name),
+					})),
+				);
+			} catch (err) {
+				console.warn("Failed to sync tool permissions:", err);
 			}
 		}
 
@@ -914,6 +1052,7 @@ export default function Dashboard() {
 			aiMaxTokens: cfg.aiMaxTokens,
 			aiProviderId: cfg.aiProviderId,
 			aiOrchestrationMode: cfg.aiOrchestrationMode,
+			aiEnabledTools: cfg.aiEnabledTools,
 			folderPath: cfg.folderPath,
 			folderMaxDepth: cfg.folderMaxDepth,
 			folderExcludePatterns: cfg.folderExcludePatterns,
@@ -943,6 +1082,7 @@ export default function Dashboard() {
 			aiMaxTokens: draft.aiMaxTokens ?? 1024,
 			aiProviderId: draft.aiProviderId ?? "",
 			aiOrchestrationMode: draft.aiOrchestrationMode ?? "none",
+			aiEnabledTools: draft.aiEnabledTools ?? [],
 			folderPath: draft.folderPath ?? "",
 			folderMaxDepth: draft.folderMaxDepth ?? 3,
 			folderExcludePatterns:
@@ -1121,6 +1261,162 @@ export default function Dashboard() {
 		}
 	});
 
+	// === 3. テンプレート保存 ===
+	const handleSaveAsTemplate = () => {
+		const g = grid();
+		if (!g) return;
+		const name = templateName().trim();
+		if (!name) return;
+		const layout = g.save() as unknown[];
+		const template: DashboardTemplate = {
+			id: `tmpl-${Date.now()}`,
+			name,
+			description: "",
+			layout,
+			edges: pipelineEdges(),
+			widgetCount: widgetCount(),
+			savedAt: new Date().toLocaleString("ja-JP"),
+		};
+		saveTemplate(template);
+		setSavedTemplates(loadTemplates());
+		setTemplateModalOpen(false);
+		setTemplateName("");
+		toastManager.addToast({ id: `tmpl-save-${Date.now()}`, type: "success", title: "テンプレート保存完了", message: name });
+	};
+
+	const handleLoadSavedTemplate = (template: DashboardTemplate) => {
+		const g = grid();
+		if (!g) return;
+		g.removeAll();
+		g.load(template.layout as Parameters<GridStack["load"]>[0]);
+		setWidgetCount(template.widgetCount);
+		setPipelineEdges(template.edges);
+		savePipelineEdges(params.id, template.edges);
+		refreshConnections();
+		renderDiagramsInGrid(gridRef);
+		setTemplateModalOpen(false);
+		toastManager.addToast({ id: `tmpl-load-${Date.now()}`, type: "info", title: "テンプレート読込完了", message: template.name });
+	};
+
+	const handleDeleteSavedTemplate = (id: string) => {
+		deleteTemplate(id);
+		setSavedTemplates(loadTemplates());
+	};
+
+	// === 5. 会話履歴ビューア ===
+	const viewChatHistory = async (widgetId: number) => {
+		const root = gridRef.querySelector(`[data-widget-id="${widgetId}"]`);
+		const agentId = root?.getAttribute("data-ai-agent-id") ?? "";
+		const header = root?.closest(".grid-stack-item")?.querySelector(".widget-header span:first-child");
+		setChatHistoryTitle(header?.textContent ?? `AI Panel #${widgetId}`);
+		if (!agentId) {
+			setChatMessages([]);
+			setChatHistoryOpen(true);
+			return;
+		}
+		// 出力エリアからexecution_idを取得（WebSocketイベントで設定される）
+		const outEl = gridRef.querySelector(`[data-output-id="${widgetId}"]`);
+		const outputText = outEl?.textContent ?? "";
+		if (!outputText) {
+			setChatMessages([]);
+			setChatHistoryOpen(true);
+			return;
+		}
+		try {
+			// 最新のexecutionを取得してメッセージを表示
+			const msgs = await getExecutionMessages(agentId);
+			setChatMessages(msgs);
+		} catch {
+			setChatMessages([]);
+		}
+		setChatHistoryOpen(true);
+	};
+
+	// === 8. スナップショット ===
+	const handleExportSnapshot = async () => {
+		const g = grid();
+		if (!g) return;
+		const savedPath = await downloadSnapshot({
+			version: 1,
+			name: itemName(),
+			dashboardId: params.id,
+			layout: g.save() as unknown[],
+			edges: pipelineEdges(),
+			widgetCount: widgetCount(),
+			exportedAt: new Date().toISOString(),
+		});
+		if (savedPath) {
+			toastManager.addToast({
+				id: `snap-export-${Date.now()}`,
+				type: "success",
+				title: "スナップショットを保存しました",
+				message: savedPath,
+			});
+		}
+	};
+
+	const handleImportSnapshot = () => {
+		const json = snapshotJson().trim();
+		if (!json) return;
+		const snapshot = importSnapshot(json);
+		if (!snapshot) {
+			toastManager.addToast({ id: `snap-err-${Date.now()}`, type: "error", title: "インポート失敗", message: "無効なJSONです" });
+			return;
+		}
+		const g = grid();
+		if (!g) return;
+		g.removeAll();
+		g.load(snapshot.layout as Parameters<GridStack["load"]>[0]);
+		setWidgetCount(snapshot.widgetCount);
+		setPipelineEdges(snapshot.edges);
+		savePipelineEdges(params.id, snapshot.edges);
+		refreshConnections();
+		renderDiagramsInGrid(gridRef);
+		setSnapshotImportOpen(false);
+		setSnapshotJson("");
+		toastManager.addToast({ id: `snap-import-${Date.now()}`, type: "success", title: "スナップショットをインポートしました" });
+	};
+
+	// === 9. ツール/プラグイン ===
+	const addToolDefinition = () => {
+		setToolDefinitions((prev) => [
+			...prev,
+			{
+				id: `tool-${Date.now()}`,
+				name: "",
+				description: "",
+				parameters: [],
+			},
+		]);
+	};
+
+	const removeToolDefinition = (id: string) => {
+		setToolDefinitions((prev) => prev.filter((t) => t.id !== id));
+	};
+
+	const updateToolDefinition = (id: string, field: string, value: string) => {
+		setToolDefinitions((prev) =>
+			prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)),
+		);
+	};
+
+	// === 7. 条件分岐エッジ設定 ===
+	const updateEdgeCondition = (edgeId: string, condition: string) => {
+		const updated = pipelineEdges().map((e) =>
+			e.id === edgeId ? { ...e, condition } : e,
+		);
+		setPipelineEdges(updated);
+		savePipelineEdges(params.id, updated);
+	};
+
+	const updateEdgeRetries = (edgeId: string, maxRetries: number) => {
+		const updated = pipelineEdges().map((e) =>
+			e.id === edgeId ? { ...e, maxRetries, retryDelayMs: e.retryDelayMs ?? 2000 } : e,
+		);
+		setPipelineEdges(updated);
+		savePipelineEdges(params.id, updated);
+	};
+
 	return (
 		<div class="dashboard-container">
 			<div class="dashboard-header">
@@ -1132,7 +1428,7 @@ export default function Dashboard() {
 								type="button"
 								class="btn-template"
 								onClick={() => createFromTemplate(tmpl.id)}
-								disabled={templateProgress()?.active}
+								disabled={templateProgress() !== null}
 								title={tmpl.description}
 							>
 								<ZapIcon size={14} />
@@ -1143,6 +1439,22 @@ export default function Dashboard() {
 					<button type="button" class="btn-add" onClick={openAddPanel}>
 						<PlusIcon size={16} />
 						Add Panel
+					</button>
+					<div class="header-separator" />
+					<button type="button" class="btn-header-icon" onClick={() => setTemplateModalOpen(true)} title="テンプレート保存/読込">
+						<BookmarkIcon size={16} />
+					</button>
+					<button type="button" class="btn-header-icon" onClick={handleExportSnapshot} title="スナップショットをエクスポート">
+						<DownloadIcon size={16} />
+					</button>
+					<button type="button" class="btn-header-icon" onClick={() => setSnapshotImportOpen(true)} title="スナップショットをインポート">
+						<UploadIcon size={16} />
+					</button>
+					<button type="button" class="btn-header-icon" onClick={() => setProviderModalOpen(true)} title="LLMプロバイダー設定">
+						<SettingsIcon size={16} />
+					</button>
+					<button type="button" class="btn-header-icon" onClick={() => setTimelineOpen(!timelineOpen())} title="実行タイムライン" classList={{ "btn-header-icon-active": timelineOpen() }}>
+						<ClockIcon size={16} />
 					</button>
 				</div>
 			</div>
@@ -1657,6 +1969,57 @@ export default function Dashboard() {
 														</select>
 													</label>
 												</div>
+												<div class="fp-ai-field">
+													<div class="fp-ai-field-label">
+														使用ツール
+													</div>
+													<div class="fp-ai-tools-grid">
+														<For each={AVAILABLE_TOOLS}>
+															{(tool) => {
+																const isEnabled = () =>
+																	panelConfig().aiEnabledTools.includes(
+																		tool.name,
+																	);
+																return (
+																	<button
+																		type="button"
+																		class="fp-ai-tool-chip"
+																		classList={{
+																			enabled: isEnabled(),
+																		}}
+																		onClick={() => {
+																			const current =
+																				panelConfig().aiEnabledTools;
+																			if (isEnabled()) {
+																				updateConfig(
+																					"aiEnabledTools",
+																					current.filter(
+																						(t) => t !== tool.name,
+																					),
+																				);
+																			} else {
+																				updateConfig(
+																					"aiEnabledTools",
+																					[...current, tool.name],
+																				);
+																			}
+																		}}
+																		title={tool.description}
+																	>
+																		<span class="fp-ai-tool-check">
+																			<Show when={isEnabled()}>
+																				<CheckIcon size={12} />
+																			</Show>
+																		</span>
+																		<span class="fp-ai-tool-label">
+																			{tool.label}
+																		</span>
+																	</button>
+																);
+															}}
+														</For>
+													</div>
+												</div>
 											</div>
 											<div class="fp-ai-section">
 												<div class="fp-field-label">入力プロンプト</div>
@@ -1977,6 +2340,40 @@ export default function Dashboard() {
 												</div>
 											</div>
 										</div>
+									{/* ツール/プラグイン設定（AIパネル時のみ） */}
+									<Show when={panelConfig().type === "ai"}>
+										<div class="fp-field">
+											<span class="fp-field-label"><WrenchIcon size={14} /> ツール/プラグイン</span>
+											<div class="tool-config-inline">
+												<For each={toolDefinitions()}>
+													{(tool) => (
+														<div class="tool-item">
+															<input
+																type="text"
+																class="modal-input"
+																placeholder="ツール名"
+																value={tool.name}
+																onInput={(e) => updateToolDefinition(tool.id, "name", e.currentTarget.value)}
+															/>
+															<input
+																type="text"
+																class="modal-input"
+																placeholder="説明"
+																value={tool.description}
+																onInput={(e) => updateToolDefinition(tool.id, "description", e.currentTarget.value)}
+															/>
+															<button type="button" class="fp-icon-btn fp-icon-btn-danger" onClick={() => removeToolDefinition(tool.id)}>
+																<Trash2Icon size={12} />
+															</button>
+														</div>
+													)}
+												</For>
+												<button type="button" class="fp-btn fp-btn-ghost" onClick={addToolDefinition}>
+													<PlusIcon size={12} /> ツール追加
+												</button>
+											</div>
+										</div>
+									</Show>
 									</div>
 								</Show>
 							</div>
@@ -1994,6 +2391,16 @@ export default function Dashboard() {
 									<SaveIcon size={14} />
 									下書き保存
 								</button>
+								<Show when={panelConfig().type === "ai" && editingWidgetId() !== null}>
+									<button
+										type="button"
+										class="fp-btn fp-btn-ghost"
+										onClick={() => { const id = editingWidgetId(); if (id !== null) viewChatHistory(id); }}
+									>
+										<MessageSquareIcon size={14} />
+										履歴
+									</button>
+								</Show>
 								<div class="fp-footer-spacer" />
 								<span class="fp-shortcut-hint">Ctrl+Enter</span>
 								<button
@@ -2080,41 +2487,260 @@ export default function Dashboard() {
 				</Show>
 			</div>
 
-			{/* エッジコンテキストメニュー */}
+			{/* エッジコンテキストメニュー（条件分岐・リトライ設定追加） */}
 			<Show when={edgeContextMenu()}>
-				{(menu) => (
-					<div
-						class="edge-context-menu"
-						style={{
-							left: `${menu().x}px`,
-							top: `${menu().y}px`,
-						}}
-					>
-						<button
-							type="button"
-							class="edge-context-menu-item"
-							onClick={() => {
-								toggleEdgeAutoChain(menu().edgeId);
-								setEdgeContextMenu(null);
+				{(menu) => {
+					const edge = () => pipelineEdges().find((e) => e.id === menu().edgeId);
+					return (
+						<div
+							class="edge-context-menu"
+							style={{
+								left: `${menu().x}px`,
+								top: `${menu().y}px`,
 							}}
 						>
-							{pipelineEdges().find((e) => e.id === menu().edgeId)?.autoChain
-								? "Auto-chain 無効化"
-								: "Auto-chain 有効化"}
-						</button>
-						<button
-							type="button"
-							class="edge-context-menu-item edge-context-menu-item-danger"
-							onClick={() => {
-								removePipelineEdge(menu().edgeId);
-								setEdgeContextMenu(null);
-							}}
-						>
-							エッジを削除
+							<button
+								type="button"
+								class="edge-context-menu-item"
+								onClick={() => {
+									toggleEdgeAutoChain(menu().edgeId);
+									setEdgeContextMenu(null);
+								}}
+							>
+								{edge()?.autoChain ? "Auto-chain 無効化" : "Auto-chain 有効化"}
+							</button>
+							<div class="edge-context-separator" />
+							<div class="edge-context-field">
+								<label for="edge-condition">条件 (contains:, not:, length&gt;)</label>
+								<input
+									id="edge-condition"
+									type="text"
+									class="edge-context-input"
+									value={edge()?.condition ?? ""}
+									placeholder="例: contains:成功"
+									onInput={(e) => updateEdgeCondition(menu().edgeId, e.currentTarget.value)}
+								/>
+							</div>
+							<div class="edge-context-field">
+								<label for="edge-retries">リトライ回数</label>
+								<input
+									id="edge-retries"
+									type="number"
+									class="edge-context-input"
+									min={0}
+									max={10}
+									value={edge()?.maxRetries ?? 0}
+									onInput={(e) => updateEdgeRetries(menu().edgeId, Number(e.currentTarget.value))}
+								/>
+							</div>
+							<div class="edge-context-separator" />
+							<button
+								type="button"
+								class="edge-context-menu-item edge-context-menu-item-danger"
+								onClick={() => {
+									removePipelineEdge(menu().edgeId);
+									setEdgeContextMenu(null);
+								}}
+							>
+								エッジを削除
+							</button>
+						</div>
+					);
+				}}
+			</Show>
+
+			{/* === 1. タイムラインドロワー === */}
+			<Show when={timelineOpen()}>
+				<div class="timeline-drawer">
+					<div class="timeline-drawer-header">
+						<ClockIcon size={16} />
+						<span>実行タイムライン</span>
+						<button type="button" class="fp-icon-btn" onClick={() => setTimelineOpen(false)}>
+							<XIcon size={14} />
 						</button>
 					</div>
-				)}
+					<div class="timeline-drawer-body">
+						<Show when={timelineEntries().length > 0} fallback={<p class="timeline-empty">実行ログはありません</p>}>
+							<For each={timelineEntries()}>
+								{(entry) => (
+									<div class={`tl-entry tl-entry-${entry.status}`}>
+										<span class="tl-time">{new Date(entry.timestamp).toLocaleTimeString("ja-JP")}</span>
+										<span class="tl-title">#{entry.widgetId} {entry.widgetTitle}</span>
+										<span class="tl-message">{entry.message}</span>
+										<Show when={entry.durationMs}>
+											<span class="tl-duration">{((entry.durationMs ?? 0) / 1000).toFixed(1)}s</span>
+										</Show>
+									</div>
+								)}
+							</For>
+						</Show>
+					</div>
+				</div>
 			</Show>
+
+			{/* === 3. テンプレート保存/読込モーダル === */}
+			<Show when={templateModalOpen()}>
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
+				{/* biome-ignore lint/a11y/useSemanticElements: modal backdrop */}
+				<div class="modal-overlay" role="button" tabIndex={-1} onClick={() => setTemplateModalOpen(false)}>
+					<div class="modal-content" role="dialog" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+						<div class="modal-header">
+							<BookmarkIcon size={18} />
+							<span>テンプレート管理</span>
+							<button type="button" class="fp-icon-btn" onClick={() => setTemplateModalOpen(false)}>
+								<XIcon size={14} />
+							</button>
+						</div>
+						<div class="modal-body">
+							<div class="modal-section">
+								<h4>現在のレイアウトを保存</h4>
+								<div class="modal-save-row">
+									<input
+										type="text"
+										class="modal-input"
+										placeholder="テンプレート名"
+										value={templateName()}
+										onInput={(e) => setTemplateName(e.currentTarget.value)}
+									/>
+									<button type="button" class="fp-btn fp-btn-primary" onClick={handleSaveAsTemplate}>
+										<SaveIcon size={14} />
+										保存
+									</button>
+								</div>
+							</div>
+							<div class="modal-section">
+								<h4>保存済みテンプレート</h4>
+								<Show when={savedTemplates().length > 0} fallback={<p class="modal-empty">保存済みテンプレートはありません</p>}>
+									<For each={savedTemplates()}>
+										{(tmpl) => (
+											<div class="modal-template-item">
+												<div class="modal-template-info">
+													<span class="modal-template-name">{tmpl.name}</span>
+													<span class="modal-template-meta">{tmpl.savedAt} · {tmpl.edges.length} エッジ</span>
+												</div>
+												<div class="modal-template-actions">
+													<button type="button" class="fp-btn fp-btn-ghost" onClick={() => handleLoadSavedTemplate(tmpl)}>読込</button>
+													<button type="button" class="fp-icon-btn fp-icon-btn-danger" onClick={() => handleDeleteSavedTemplate(tmpl.id)}>
+														<Trash2Icon size={14} />
+													</button>
+												</div>
+											</div>
+										)}
+									</For>
+								</Show>
+							</div>
+						</div>
+					</div>
+				</div>
+			</Show>
+
+			{/* === 5. 会話履歴モーダル === */}
+			<Show when={chatHistoryOpen()}>
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
+				{/* biome-ignore lint/a11y/useSemanticElements: modal backdrop */}
+				<div class="modal-overlay" role="button" tabIndex={-1} onClick={() => setChatHistoryOpen(false)}>
+					<div class="modal-content modal-chat" role="dialog" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+						<div class="modal-header">
+							<MessageSquareIcon size={18} />
+							<span>{chatHistoryTitle()}</span>
+							<button type="button" class="fp-icon-btn" onClick={() => setChatHistoryOpen(false)}>
+								<XIcon size={14} />
+							</button>
+						</div>
+						<div class="modal-body chat-body">
+							<Show when={chatMessages().length > 0} fallback={<p class="modal-empty">会話履歴はありません</p>}>
+								<For each={chatMessages()}>
+									{(msg) => (
+										<div class={`chat-msg chat-msg-${msg.role}`}>
+											<span class="chat-role">{msg.role === "user" ? "User" : "AI"}</span>
+											<div class="chat-content">{msg.content}</div>
+										</div>
+									)}
+								</For>
+							</Show>
+						</div>
+					</div>
+				</div>
+			</Show>
+
+			{/* === 6. LLMプロバイダー管理モーダル === */}
+			<Show when={providerModalOpen()}>
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
+				{/* biome-ignore lint/a11y/useSemanticElements: modal backdrop */}
+				<div class="modal-overlay" role="button" tabIndex={-1} onClick={() => setProviderModalOpen(false)}>
+					<div class="modal-content" role="dialog" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+						<div class="modal-header">
+							<SettingsIcon size={18} />
+							<span>LLMプロバイダー設定</span>
+							<button type="button" class="fp-icon-btn" onClick={() => setProviderModalOpen(false)}>
+								<XIcon size={14} />
+							</button>
+						</div>
+						<div class="modal-body">
+							<Show when={llmProviders().length > 0} fallback={<p class="modal-empty">プロバイダーが登録されていません</p>}>
+								<For each={llmProviders()}>
+									{(provider) => (
+										<div class="provider-item">
+											<div class="provider-info">
+												<span class="provider-name">{provider.display_name || provider.name}</span>
+												<span class="provider-meta">{provider.api_base_url ?? "デフォルトURL"}</span>
+											</div>
+											<span class={`provider-status ${provider.is_enabled ? "provider-enabled" : "provider-disabled"}`}>
+												{provider.is_enabled ? "有効" : "無効"}
+											</span>
+										</div>
+									)}
+								</For>
+							</Show>
+						</div>
+					</div>
+				</div>
+			</Show>
+
+			{/* === 8. スナップショットインポートモーダル === */}
+			<Show when={snapshotImportOpen()}>
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: modal backdrop */}
+				{/* biome-ignore lint/a11y/useSemanticElements: modal backdrop */}
+				<div class="modal-overlay" role="button" tabIndex={-1} onClick={() => setSnapshotImportOpen(false)}>
+					<div class="modal-content" role="dialog" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+						<div class="modal-header">
+							<UploadIcon size={18} />
+							<span>スナップショットインポート</span>
+							<button type="button" class="fp-icon-btn" onClick={() => setSnapshotImportOpen(false)}>
+								<XIcon size={14} />
+							</button>
+						</div>
+						<div class="modal-body">
+							<textarea
+								class="snapshot-textarea"
+								placeholder="エクスポートしたJSONをペーストしてください..."
+								value={snapshotJson()}
+								onInput={(e) => setSnapshotJson(e.currentTarget.value)}
+								rows={10}
+							/>
+							<button type="button" class="fp-btn fp-btn-primary" style={{ "margin-top": "0.5rem" }} onClick={handleImportSnapshot}>
+								インポート実行
+							</button>
+						</div>
+					</div>
+				</div>
+			</Show>
+
+			{/* === 10. コラボレーション表示 === */}
+			<Show when={collaborationUsers().length > 0}>
+				<div class="collab-bar">
+					<For each={collaborationUsers()}>
+						{(user) => (
+							<span class="collab-avatar" style={{ background: user.color }} title={user.name}>
+								{user.name.charAt(0).toUpperCase()}
+							</span>
+						)}
+					</For>
+				</div>
+			</Show>
+
+			{/* トースト通知 */}
+			<ToastContainer />
 		</div>
 	);
 }

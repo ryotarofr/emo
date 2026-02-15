@@ -1,18 +1,22 @@
 import type { GridStack } from "gridstack";
 import type { EventEnvelope } from "../../utils/agent";
 import { executeAgent } from "../../utils/agent";
+import { TYPE_LABELS } from "./constants";
+import { setOutputText, updateStatusBadge } from "./domHelpers";
 import {
 	buildAugmentedPrompt,
 	collectUpstreamOutputs,
 	getPanelOutput,
 } from "./pipelineEngine";
-import type { PipelineEdge } from "./types";
+import type { WidgetDataContext, WidgetType } from "./types";
 import { escapeHtml, makeAiContent } from "./widgetContent";
 
-export interface WsEventContext {
-	getPipelineEdges: () => PipelineEdge[];
-	getPanelOutputs: () => Record<number, string>;
-	setPanelOutput: (widgetId: number, output: string) => void;
+export type WsEventContext = WidgetDataContext;
+
+/** agent_idからdata-widget-idを逆引きする */
+function resolveWidgetId(gridRef: Element, agentId: string): string | null {
+	const aiRoot = gridRef.querySelector(`[data-ai-agent-id="${agentId}"]`);
+	return aiRoot?.getAttribute("data-widget-id") ?? null;
 }
 
 /**
@@ -29,58 +33,25 @@ export function handleWsEvent(
 ): void {
 	const evt = event.event;
 	if (evt.type === "AgentExecutionStarted") {
-		// agent_idでパネルを検索しバッジを更新
-		const aiRoot = gridRef?.querySelector(
-			`[data-ai-agent-id="${evt.agent_id}"]`,
-		);
-		if (aiRoot) {
-			const wid = aiRoot.getAttribute("data-widget-id");
-			if (wid) {
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-running";
-					badge.textContent = "実行中...";
-				}
-			}
-		}
+		const wid = resolveWidgetId(gridRef, evt.agent_id);
+		if (wid) updateStatusBadge(gridRef, wid, "running", "実行中...");
 	} else if (evt.type === "AgentExecutionCompleted") {
-		const aiRoot = gridRef?.querySelector(
-			`[data-ai-agent-id="${evt.agent_id}"]`,
-		);
-		if (aiRoot) {
-			const wid = aiRoot.getAttribute("data-widget-id");
-			if (wid) {
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-completed";
-					badge.textContent = "完了";
-				}
-				const outEl = gridRef?.querySelector(`[data-output-id="${wid}"]`);
-				if (outEl) outEl.textContent = evt.output;
+		const wid = resolveWidgetId(gridRef, evt.agent_id);
+		if (wid) {
+			updateStatusBadge(gridRef, wid, "completed", "完了");
+			setOutputText(gridRef, wid, evt.output);
 
-				// 出力をキャッシュ + auto-chainトリガー
-				const widNum = Number(wid);
-				if (wsCtx && !Number.isNaN(widNum)) {
-					wsCtx.setPanelOutput(widNum, evt.output);
-					triggerAutoChain(widNum, gridRef, wsCtx);
-				}
+			const widNum = Number(wid);
+			if (wsCtx && !Number.isNaN(widNum)) {
+				wsCtx.setPanelOutput(widNum, evt.output);
+				triggerAutoChain(widNum, gridRef, wsCtx);
 			}
 		}
 	} else if (evt.type === "AgentExecutionFailed") {
-		const aiRoot = gridRef?.querySelector(
-			`[data-ai-agent-id="${evt.agent_id}"]`,
-		);
-		if (aiRoot) {
-			const wid = aiRoot.getAttribute("data-widget-id");
-			if (wid) {
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-failed";
-					badge.textContent = "失敗";
-				}
-				const outEl = gridRef?.querySelector(`[data-output-id="${wid}"]`);
-				if (outEl) outEl.textContent = evt.error;
-			}
+		const wid = resolveWidgetId(gridRef, evt.agent_id);
+		if (wid) {
+			updateStatusBadge(gridRef, wid, "failed", "失敗");
+			setOutputText(gridRef, wid, evt.error);
 		}
 	} else if (evt.type === "SubAgentCreated") {
 		// Step 1: 新しいサブエージェントパネルを動的に追加
@@ -157,7 +128,6 @@ export function handleWsEvent(
 		// Step 5: 接続線を再計算
 		refreshConnections();
 	} else if (evt.type === "OrchestratorPlanProposed") {
-		// オーケストレーターパネルにプランを表示
 		const orchRoot = gridRef?.querySelector(
 			`[data-ai-agent-id="${evt.orchestrator_agent_id}"]`,
 		);
@@ -179,57 +149,31 @@ export function handleWsEvent(
 							})
 							.join("");
 					}
-					// 承認/却下用にウィジェットにorchestration_run_idを保存
 					orchRoot.setAttribute(
 						"data-orchestration-run-id",
 						evt.orchestration_run_id,
 					);
 				}
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-awaiting";
-					badge.textContent = "承認待ち";
-				}
+				updateStatusBadge(gridRef, wid, "awaiting", "承認待ち");
 			}
 		}
 	} else if (evt.type === "OrchestratorCompleted") {
-		const orchRoot = gridRef?.querySelector(
-			`[data-ai-agent-id="${evt.orchestrator_agent_id}"]`,
-		);
-		if (orchRoot) {
-			const wid = orchRoot.getAttribute("data-widget-id");
-			if (wid) {
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-completed";
-					badge.textContent = "完了";
-				}
-				const outEl = gridRef?.querySelector(`[data-output-id="${wid}"]`);
-				if (outEl) outEl.textContent = evt.output;
+		const wid = resolveWidgetId(gridRef, evt.orchestrator_agent_id);
+		if (wid) {
+			updateStatusBadge(gridRef, wid, "completed", "完了");
+			setOutputText(gridRef, wid, evt.output);
 
-				// 出力をキャッシュ + auto-chainトリガー
-				const widNum = Number(wid);
-				if (wsCtx && !Number.isNaN(widNum)) {
-					wsCtx.setPanelOutput(widNum, evt.output);
-					triggerAutoChain(widNum, gridRef, wsCtx);
-				}
+			const widNum = Number(wid);
+			if (wsCtx && !Number.isNaN(widNum)) {
+				wsCtx.setPanelOutput(widNum, evt.output);
+				triggerAutoChain(widNum, gridRef, wsCtx);
 			}
 		}
 	} else if (evt.type === "OrchestratorFailed") {
-		const orchRoot = gridRef?.querySelector(
-			`[data-ai-agent-id="${evt.orchestrator_agent_id}"]`,
-		);
-		if (orchRoot) {
-			const wid = orchRoot.getAttribute("data-widget-id");
-			if (wid) {
-				const badge = gridRef?.querySelector(`[data-status-id="${wid}"]`);
-				if (badge) {
-					badge.className = "ai-status-badge ai-status-failed";
-					badge.textContent = "失敗";
-				}
-				const outEl = gridRef?.querySelector(`[data-output-id="${wid}"]`);
-				if (outEl) outEl.textContent = evt.error;
-			}
+		const wid = resolveWidgetId(gridRef, evt.orchestrator_agent_id);
+		if (wid) {
+			updateStatusBadge(gridRef, wid, "failed", "失敗");
+			setOutputText(gridRef, wid, evt.error);
 		}
 	}
 }
@@ -287,36 +231,18 @@ function triggerAutoChain(
 				const srcRoot = gridRef.querySelector(
 					`[data-widget-id="${u.widgetId}"]`,
 				);
-				const type = srcRoot?.getAttribute("data-widget-type") ?? "unknown";
-				const typeLabels: Record<string, string> = {
-					text: "テキスト Widget",
-					visual: "ビジュアル Widget",
-					ai: "AI連携 Widget",
-					object: "オブジェクト Widget",
-					folder: "フォルダ Widget",
-				};
-				return { ...u, label: typeLabels[type] ?? "Widget" };
+				const type = (srcRoot?.getAttribute("data-widget-type") ?? "unknown") as WidgetType;
+				return { ...u, label: TYPE_LABELS[type] ?? "Widget" };
 			},
 		);
 		const augmentedPrompt = buildAugmentedPrompt(prompt, upstream);
 
-		// バッジを更新して実行開始
-		const badge = gridRef.querySelector(`[data-status-id="${targetId}"]`);
-		if (badge) {
-			badge.className = "ai-status-badge ai-status-running";
-			badge.textContent = "自動実行中...";
-		}
-		const outEl = gridRef.querySelector(`[data-output-id="${targetId}"]`);
-		if (outEl) outEl.textContent = "";
+		updateStatusBadge(gridRef, targetId, "running", "自動実行中...");
+		setOutputText(gridRef, targetId, "");
 
 		executeAgent(agentId, augmentedPrompt).catch((err) => {
-			const badgeEl = gridRef.querySelector(`[data-status-id="${targetId}"]`);
-			if (badgeEl) {
-				badgeEl.className = "ai-status-badge ai-status-failed";
-				badgeEl.textContent = "エラー";
-			}
-			const errorEl = gridRef.querySelector(`[data-output-id="${targetId}"]`);
-			if (errorEl) errorEl.textContent = String(err);
+			updateStatusBadge(gridRef, targetId, "failed", "エラー");
+			setOutputText(gridRef, targetId, String(err));
 		});
 	}
 }

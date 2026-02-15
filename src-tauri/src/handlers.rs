@@ -11,18 +11,20 @@ use crate::llm::LlmRegistry;
 use crate::models::{
     Agent, AgentExecution, AgentMessage, CreateAgentRequest, CreateUserRequest,
     CreateWorkflowRequest, ExecuteAgentRequest, LlmProvider, OrchestrateRequest, OrchestrationRun,
-    User, Workflow,
+    UpdateToolPermissionsRequest, User, Workflow,
 };
 use crate::services::{
     agent_service, auth_service, execution_service, orchestration, user_service,
     workflow_service,
 };
+use crate::tools::ToolRegistry;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: DbPool,
     pub llm_registry: Arc<LlmRegistry>,
     pub event_bus: EventBus,
+    pub tool_registry: Arc<ToolRegistry>,
 }
 
 // --- DB handlers ---
@@ -191,6 +193,7 @@ pub async fn orchestrate_agent_handler(
         &state.db,
         &state.llm_registry,
         &state.event_bus,
+        &state.tool_registry,
         &request,
     )
     .await?;
@@ -213,6 +216,7 @@ pub async fn approve_orchestration_handler(
         &state.db,
         &state.llm_registry,
         &state.event_bus,
+        &state.tool_registry,
         id,
     )
     .await?;
@@ -225,4 +229,58 @@ pub async fn reject_orchestration_handler(
 ) -> Result<Json<OrchestrationRun>, AppError> {
     let run = orchestration::reject_orchestration(&state.db, &state.event_bus, id).await?;
     Ok(Json(run))
+}
+
+// --- Tool handlers ---
+
+/// 利用可能な全ツール定義を返す
+pub async fn list_tools_handler(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<crate::llm::types::ToolDefinition>>, AppError> {
+    let names = state.tool_registry.tool_names();
+    let definitions = state.tool_registry.definitions_for(&names);
+    Ok(Json(definitions))
+}
+
+/// エージェントのツール権限を更新
+pub async fn update_tool_permissions_handler(
+    State(state): State<AppState>,
+    Json(request): Json<UpdateToolPermissionsRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let pool = state.db.get()?;
+
+    for entry in &request.tools {
+        sqlx::query(
+            r#"
+            INSERT INTO agent_tool_permissions (agent_id, tool_name, is_enabled, config)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (agent_id, tool_name) DO UPDATE
+            SET is_enabled = EXCLUDED.is_enabled, config = EXCLUDED.config, updated_at = NOW()
+            "#,
+        )
+        .bind(request.agent_id)
+        .bind(&entry.tool_name)
+        .bind(entry.is_enabled)
+        .bind(&entry.config)
+        .execute(&pool)
+        .await?;
+    }
+
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+/// エージェントのツール権限を取得
+pub async fn get_tool_permissions_handler(
+    State(state): State<AppState>,
+    Path(agent_id): Path<Uuid>,
+) -> Result<Json<Vec<crate::models::AgentToolPermission>>, AppError> {
+    let pool = state.db.get()?;
+    let permissions = sqlx::query_as::<_, crate::models::AgentToolPermission>(
+        "SELECT * FROM agent_tool_permissions WHERE agent_id = $1 ORDER BY tool_name",
+    )
+    .bind(agent_id)
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(permissions))
 }

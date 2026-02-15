@@ -66,6 +66,17 @@ pub enum ExecutionEvent {
         orchestrator_agent_id: Uuid,
         error: String,
     },
+    // --- Tool execution events ---
+    ToolExecutionStarted {
+        execution_id: Uuid,
+        tool_name: String,
+    },
+    ToolExecutionCompleted {
+        execution_id: Uuid,
+        tool_name: String,
+        duration_ms: u64,
+        is_error: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

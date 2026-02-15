@@ -8,6 +8,7 @@ mod handlers;
 mod llm;
 mod models;
 mod services;
+mod tools;
 mod ws;
 
 use std::sync::{Arc, Mutex};
@@ -35,6 +36,18 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn get_api_port(port: tauri::State<'_, ApiPort>) -> u16 {
     port.0
+}
+
+/// Initialize ToolRegistry with all available tools
+fn init_tool_registry() -> tools::ToolRegistry {
+    let mut registry = tools::ToolRegistry::new();
+    registry.register(Box::new(tools::web_fetch::WebFetchTool::new()));
+    registry.register(Box::new(tools::web_search::WebSearchTool::new()));
+    registry.register(Box::new(tools::file_write::FileWriteTool));
+    registry.register(Box::new(tools::shell_exec::ShellExecTool));
+    registry.register(Box::new(tools::git_ops::GitOpsTool));
+    registry.register(Box::new(tools::self_eval::SelfEvalTool));
+    registry
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -69,6 +82,15 @@ pub fn run() {
             let event_bus = EventBus::new(256);
             app.manage(event_bus.clone());
 
+            // Initialize ToolRegistry
+            let tool_registry = Arc::new(init_tool_registry());
+            println!(
+                "[tebiki] ToolRegistry initialized with {} tools: {:?}",
+                tool_registry.tool_names().len(),
+                tool_registry.tool_names()
+            );
+            app.manage(tool_registry.clone());
+
             // Prepare graceful shutdown channel
             let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
             app.manage(ShutdownSignal(Mutex::new(Some(shutdown_tx))));
@@ -78,6 +100,7 @@ pub fn run() {
                 db: db_pool.clone(),
                 llm_registry: registry,
                 event_bus,
+                tool_registry,
             };
 
             let app_handle = app.handle().clone();
@@ -130,6 +153,16 @@ pub fn run() {
                     .route(
                         "/api/orchestrate/{id}/reject",
                         post(handlers::reject_orchestration_handler),
+                    )
+                    // Tool routes
+                    .route("/api/tools", get(handlers::list_tools_handler))
+                    .route(
+                        "/api/tools/permissions",
+                        post(handlers::update_tool_permissions_handler),
+                    )
+                    .route(
+                        "/api/tools/permissions/{agent_id}",
+                        get(handlers::get_tool_permissions_handler),
                     )
                     // WebSocket
                     .route("/api/ws", get(ws::ws_handler))
@@ -225,6 +258,9 @@ pub fn run() {
             commands::get_orchestration,
             commands::approve_orchestration,
             commands::reject_orchestration,
+            commands::list_tools,
+            commands::update_tool_permissions,
+            commands::get_tool_permissions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -13,7 +13,7 @@ const MAX_TOOL_LOOP_ITERATIONS: u32 = 20;
 
 /// オーケストレーターのツールループを実行する
 pub(super) async fn run_tool_loop(ctx: &OrchestrationContext, mut messages: Vec<LlmMessage>) {
-    let tools = orchestrator_tools();
+    let tools = orchestrator_tools(ctx);
 
     let llm_provider = match ctx.registry.get(&ctx.provider_name) {
         Some(p) => p,
@@ -167,7 +167,7 @@ pub(super) async fn run_tool_loop_approval(
     ctx: &OrchestrationContext,
     mut messages: Vec<LlmMessage>,
 ) {
-    let tools = orchestrator_tools();
+    let tools = orchestrator_tools(ctx);
 
     let llm_provider = match ctx.registry.get(&ctx.provider_name) {
         Some(p) => p,

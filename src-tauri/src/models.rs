@@ -164,3 +164,51 @@ pub struct OrchestrateRequest {
     pub input: String,
     pub mode: String,
 }
+
+// --- Tool System Models ---
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AgentToolPermission {
+    pub id: Uuid,
+    pub agent_id: Uuid,
+    pub tool_name: String,
+    pub is_enabled: bool,
+    pub config: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[allow(dead_code)]
+pub struct ToolExecution {
+    pub id: Uuid,
+    pub execution_id: Option<Uuid>,
+    pub tool_name: String,
+    pub input: serde_json::Value,
+    pub output: Option<String>,
+    pub is_error: bool,
+    pub duration_ms: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ExecuteAgentWithToolsRequest {
+    pub agent_id: Uuid,
+    pub input: String,
+    pub enabled_tools: Vec<String>,
+    pub tool_config: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateToolPermissionsRequest {
+    pub agent_id: Uuid,
+    pub tools: Vec<ToolPermissionEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolPermissionEntry {
+    pub tool_name: String,
+    pub is_enabled: bool,
+    pub config: Option<serde_json::Value>,
+}
